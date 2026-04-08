@@ -4,53 +4,53 @@ import { useNavigate } from "react-router-dom";
 
 const plans = [
   {
-    name: "Starter",
-    price: "$299",
+    name: "Free",
+    price: "$0",
     period: "/mo",
-    description: "For small teams getting started with competitive intelligence.",
+    description: "Get started with a basic daily briefing.",
     features: [
-      "Up to 5 competitors",
-      "3 team members",
-      "10 playbooks",
-      "Basic chat",
-      "Intel feed + alerts",
-      "Email support",
+      "Daily 3-minute briefing",
+      "Weather + general news",
+      "SMS delivery",
+      "Web audio player",
+      "1 preset voice",
     ],
-    cta: "Start free trial",
+    cta: "Get Started Free",
     highlight: false,
   },
   {
-    name: "Growth",
-    price: "$599",
+    name: "Premium",
+    price: "$9.99",
     period: "/mo",
-    description: "For scaling teams that compete on every deal.",
+    description: "The full experience — your morning, your way.",
     features: [
-      "Up to 15 competitors",
-      "10 team members",
-      "Unlimited playbooks",
-      "Full chat with sources",
-      "Slack integration + personalized alerts",
-      "Gong & CRM integrations",
-      "Priority support",
+      "Up to 15-minute briefings",
+      "Unlimited custom interests",
+      "Email & calendar integration",
+      "Traffic & commute data",
+      "Multi-voice conversational style",
+      "Voice cloning (your voice)",
+      "Podcast feed export",
+      "DeepCast on-demand episodes",
+      "Priority delivery",
     ],
-    cta: "Start free trial",
+    cta: "Start Free Trial",
     highlight: true,
   },
   {
-    name: "Pro",
-    price: "$999",
-    period: "/mo",
-    description: "For organizations that need the full competitive advantage.",
+    name: "Team",
+    price: "$29.99",
+    period: "/user/mo",
+    description: "Shared company briefings for your whole team.",
     features: [
-      "Unlimited competitors",
-      "Unlimited team members",
-      "Win/loss analysis",
-      "API access",
-      "Custom integrations",
-      "Dedicated success manager",
-      "SSO & advanced security",
+      "Everything in Premium",
+      "Shared company news sources",
+      "Team admin dashboard",
+      "Combined personal + team briefs",
+      "Usage analytics",
+      "Priority support",
     ],
-    cta: "Contact sales",
+    cta: "Contact Us",
     highlight: false,
   },
 ];
@@ -69,10 +69,10 @@ export function PricingSection({ onStartTrial }: { onStartTrial?: () => void }) 
       >
         <p className="text-xs font-medium tracking-widest uppercase text-[hsl(var(--blue-accent))] mb-3">Pricing</p>
         <h2 className="text-[clamp(1.75rem,3vw,2.5rem)] font-medium tracking-[-0.02em] text-primary-app">
-          Simple pricing. No surprises.
+          Start free. Upgrade when you're hooked.
         </h2>
         <p className="text-sm text-muted-foreground mt-2 max-w-[400px] mx-auto">
-          Every plan includes a 14-day free trial. No credit card required.
+          14-day free trial on Premium. No credit card required.
         </p>
       </motion.div>
 
@@ -113,7 +113,7 @@ export function PricingSection({ onStartTrial }: { onStartTrial?: () => void }) 
             </ul>
 
             <button
-              onClick={() => plan.cta === "Contact sales" ? navigate("/chat") : onStartTrial?.()}
+              onClick={() => plan.cta === "Contact Us" ? navigate("/contact") : navigate("/signup")}
               className={`mt-6 rounded-full px-5 py-2.5 text-sm font-medium transition-all hover:opacity-85 ${
                 plan.highlight
                   ? "bg-foreground text-background"

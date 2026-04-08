@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Headphones } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { LandingNav } from "@/components/landing/LandingNav";
 import { HeroSection } from "@/components/landing/HeroSection";
@@ -31,18 +31,18 @@ export default function Landing({ onStartTrial }: { onStartTrial?: () => void })
           className="text-center"
         >
           <h2 className="text-[clamp(1.75rem,3vw,2.5rem)] font-medium tracking-[-0.02em] text-primary-app mb-4">
-            Stop guessing. Start winning.
+            Your morning deserves better.
           </h2>
           <p className="text-base text-muted-foreground mb-10 max-w-[420px] mx-auto leading-relaxed">
-            Join the teams using Hugo to turn competitive intelligence into revenue.
+            Replace morning scrolling with a personalized audio briefing. Free to start, no app required.
           </p>
           <motion.button
-            onClick={onStartTrial}
+            onClick={() => navigate("/signup")}
             whileHover={{ scale: 1.03 }}
             whileTap={{ scale: 0.98 }}
             className="rounded-full bg-foreground text-background px-8 py-3 text-[15px] font-medium hover:opacity-85 transition-opacity inline-flex items-center gap-2"
           >
-            Get Started <ArrowRight className="h-4 w-4" strokeWidth={2} />
+            Get Started Free <ArrowRight className="h-4 w-4" strokeWidth={2} />
           </motion.button>
         </motion.div>
       </section>
