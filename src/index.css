@@ -1,0 +1,165 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Nunito:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 98%;
+    --foreground: 0 0% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 15%;
+
+    --primary: 0 0% 15%;
+    --primary-foreground: 0 0% 98%;
+
+    --secondary: 0 0% 95%;
+    --secondary-foreground: 0 0% 15%;
+
+    --muted: 0 0% 93%;
+    --muted-foreground: 0 0% 45%;
+
+    --accent: 0 0% 95%;
+    --accent-foreground: 0 0% 15%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 0 0% 91%;
+    --input: 0 0% 91%;
+    --ring: 0 0% 15%;
+
+    --radius: 9999px;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 0 0% 45%;
+    --sidebar-primary: 0 0% 15%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 0 0% 96%;
+    --sidebar-accent-foreground: 0 0% 15%;
+    --sidebar-border: 0 0% 93%;
+    --sidebar-ring: 0 0% 15%;
+
+    /* Hugo-specific tokens */
+    --text-primary: 0 0% 10%;
+    --text-secondary: 0 0% 40%;
+    --text-subtle: 0 0% 60%;
+    --surface-hover: 0 0% 96%;
+    --surface-active: 0 0% 93%;
+    --urgency-high: 0 72% 55%;
+    --urgency-medium: 35 90% 52%;
+    --urgency-low: 152 60% 42%;
+    --blue-accent: 210 90% 56%;
+    --blue-accent-light: 210 90% 95%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}
+
+@layer utilities {
+  .text-primary-app {
+    color: hsl(var(--text-primary));
+  }
+  .text-secondary-app {
+    color: hsl(var(--text-secondary));
+  }
+  .text-subtle {
+    color: hsl(var(--text-subtle));
+  }
+  .surface-card {
+    background-color: hsl(var(--card));
+  }
+  .surface-hover {
+    background-color: hsl(var(--surface-hover));
+  }
+  .urgency-high {
+    color: hsl(var(--urgency-high));
+  }
+  .urgency-medium {
+    color: hsl(var(--urgency-medium));
+  }
+  .urgency-low {
+    color: hsl(var(--urgency-low));
+  }
+  .blue-accent {
+    color: hsl(var(--blue-accent));
+  }
+  .bg-blue-accent {
+    background-color: hsl(var(--blue-accent));
+  }
+
+  .hero-brand-orb {
+    background:
+      radial-gradient(
+        58% 62% at 50% 78%,
+        hsl(var(--blue-accent) / 0.24) 0%,
+        hsl(var(--blue-accent) / 0.14) 36%,
+        hsl(var(--blue-accent-light) / 0.08) 62%,
+        transparent 100%
+      ),
+      radial-gradient(
+        42% 50% at 28% 88%,
+        hsl(var(--blue-accent) / 0.16) 0%,
+        transparent 100%
+      ),
+      radial-gradient(
+        44% 52% at 72% 86%,
+        hsl(var(--blue-accent) / 0.14) 0%,
+        transparent 100%
+      );
+    filter: blur(14px) saturate(110%);
+    opacity: 0.92;
+    mix-blend-mode: screen;
+  }
+
+  .hero-brand-wash {
+    background: linear-gradient(
+      180deg,
+      hsl(var(--background) / 0) 0%,
+      hsl(var(--blue-accent-light) / 0.18) 34%,
+      hsl(var(--blue-accent) / 0.12) 68%,
+      hsl(var(--background) / 0.78) 100%
+    );
+  }
+
+  .hero-brand-columns {
+    background-image:
+      linear-gradient(
+        180deg,
+        hsl(var(--blue-accent) / 0.12) 0%,
+        hsl(var(--blue-accent) / 0.03) 56%,
+        transparent 100%
+      ),
+      repeating-linear-gradient(
+        90deg,
+        hsl(var(--blue-accent) / 0.16) 0 1px,
+        transparent 1px 92px
+      );
+    -webkit-mask-image: linear-gradient(
+      to top,
+      hsl(var(--foreground) / 0.95) 0%,
+      hsl(var(--foreground) / 0.72) 46%,
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      to top,
+      hsl(var(--foreground) / 0.95) 0%,
+      hsl(var(--foreground) / 0.72) 46%,
+      transparent 100%
+    );
+    opacity: 0.62;
+    mix-blend-mode: soft-light;
+  }
+}
