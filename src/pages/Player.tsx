@@ -1,186 +1,177 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Headphones, Play, Pause, SkipBack, SkipForward, Volume2, Download, MessageSquare, ChevronDown, Clock } from "lucide-react";
-import { Link } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
+import { ArrowLeft, Share, MicOff, Pause, Play } from "lucide-react";
+import type { BriefingSection } from "@/types/database";
 
-const chapters = [
-  { emoji: "☀️", label: "Weather", time: "0:00", duration: "1:12", text: "Sunny skies today in San Francisco, high of 72°F with light winds. Perfect for your outdoor lunch meeting at Dolores Park. Evening drops to 58°F — grab a light jacket." },
-  { emoji: "🚗", label: "Commute", time: "1:12", duration: "1:18", text: "22 minutes via 101 this morning — light traffic. There's construction on Market St so take Mission instead if heading downtown. Leave by 8:15 to make your 9am." },
-  { emoji: "📅", label: "Calendar", time: "2:30", duration: "1:15", text: "Three meetings today. 10am design review with the product team — they'll want to see the new mockups. 1pm investor call with Sequoia — prep your Q1 metrics. 3pm team standup." },
-  { emoji: "📧", label: "Emails", time: "3:45", duration: "1:25", text: "Two important emails overnight. Your CEO sent board deck feedback — mostly positive, wants to adjust the TAM slide. And a partnership proposal from Acme Corp worth reviewing." },
-  { emoji: "🤖", label: "AI Startups", time: "5:10", duration: "1:50", text: "Big day in AI. OpenAI announced GPT-5 turbo with 2x context window. Anthropic closed another $2B round. Y Combinator's latest batch had 12 AI-native startups — three in your space." },
-  { emoji: "🏈", label: "49ers", time: "7:00", duration: "1:12", text: "The 49ers signed wide receiver from the draft yesterday. Preseason kicks off in 3 weeks. Brock Purdy's throwing arm is looking sharp in OTAs according to beat reporters." },
+// Mock briefing data
+const MOCK_SECTIONS: BriefingSection[] = [
+  {
+    id: "1", briefing_id: "demo", type: "weather", title: "Weather",
+    summary: "Sunny skies today in San Francisco, high of 72°F with light winds from the west. Perfect for your outdoor lunch meeting at Dolores Park this afternoon.",
+    card_payload: null, order: 0, duration_minutes: 1,
+  },
+  {
+    id: "2", briefing_id: "demo", type: "calendar", title: "Calendar",
+    summary: "You have three meetings today:",
+    card_payload: {
+      items: [
+        "10:00 AM — Design review with the product team. They'll want to see the new mockups you've been working on.",
+        "1:00 PM — Investor call with Sequoia. Prep your Q1 metrics and growth chart before this one.",
+        "3:00 PM — Team standup. Quick sync, should be under 15 minutes.",
+      ],
+    },
+    order: 1, duration_minutes: 1.5,
+  },
+  {
+    id: "3", briefing_id: "demo", type: "emails", title: "Emails",
+    summary: "Two important emails overnight:",
+    card_payload: {
+      items: [
+        "Your CEO sent board deck feedback — mostly positive, wants to adjust the TAM slide and add a competitive landscape section.",
+        "A partnership proposal from Acme Corp arrived. Looks worth reviewing — they're offering co-marketing for Q2.",
+      ],
+    },
+    order: 2, duration_minutes: 1.5,
+  },
+  {
+    id: "4", briefing_id: "demo", type: "news", title: "AI & Tech",
+    summary: "Big day in artificial intelligence:",
+    card_payload: {
+      items: [
+        "OpenAI announced GPT-5 turbo with a 2x context window and significantly improved reasoning capabilities.",
+        "Anthropic closed another $2B funding round, bringing their total valuation to $28 billion.",
+        "Y Combinator's latest batch had 12 AI-native startups — three are building in your space.",
+      ],
+    },
+    order: 3, duration_minutes: 2,
+  },
+  {
+    id: "5", briefing_id: "demo", type: "sports", title: "49ers",
+    summary: "NFL news:",
+    card_payload: {
+      items: [
+        "The 49ers signed a new wide receiver from the draft yesterday. Preseason kicks off in 3 weeks.",
+        "Brock Purdy's throwing arm is looking sharp in OTAs according to beat reporters covering Santa Clara.",
+      ],
+    },
+    order: 4, duration_minutes: 1,
+  },
 ];
 
 export default function Player() {
+  const { briefingId } = useParams();
   const [isPlaying, setIsPlaying] = useState(false);
-  const [activeChapter, setActiveChapter] = useState(0);
-  const [progress, setProgress] = useState(38);
   const [speed, setSpeed] = useState(1);
-  const [showChat, setShowChat] = useState(false);
+  const [activeSectionIndex, setActiveSectionIndex] = useState(0);
+  const speeds = [1, 1.25, 1.5, 2];
 
-  const speeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
+  const cycleSpeed = () => {
+    const idx = speeds.indexOf(speed);
+    setSpeed(speeds[(idx + 1) % speeds.length]);
+  };
+
+  const sections = MOCK_SECTIONS;
+  const activeSection = sections[activeSectionIndex];
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="sticky top-0 z-20 bg-background/80 backdrop-blur-xl border-b border-border">
-        <div className="max-w-[480px] mx-auto flex items-center justify-between px-4 py-3">
-          <Link to="/dashboard" className="text-sm text-muted-foreground hover:text-primary-app transition-colors">
-            ← Back
-          </Link>
-          <div className="flex items-center gap-2">
-            <div className="h-6 w-6 rounded-full bg-foreground flex items-center justify-center">
-              <Headphones className="h-3 w-3 text-background" strokeWidth={2} />
-            </div>
-            <span className="text-sm font-semibold text-primary-app">Yours</span>
-          </div>
-          <button className="text-muted-foreground hover:text-primary-app transition-colors">
-            <Download className="h-4 w-4" strokeWidth={1.5} />
-          </button>
+    <div className="min-h-screen yours-warm-gradient flex flex-col">
+      {/* Top bar */}
+      <div className="flex items-center justify-between px-5 pt-[env(safe-area-inset-top,12px)] pb-3 pt-5">
+        <Link
+          to="/app"
+          className="h-10 w-10 rounded-full bg-white/15 backdrop-blur-sm flex items-center justify-center"
+        >
+          <ArrowLeft className="h-5 w-5 text-white/90" strokeWidth={1.5} />
+        </Link>
+        <h1 className="text-white text-lg font-bold tracking-tight">Yours</h1>
+        <button className="h-10 w-10 rounded-full bg-white/15 backdrop-blur-sm flex items-center justify-center">
+          <Share className="h-4.5 w-4.5 text-white/90" strokeWidth={1.5} />
+        </button>
+      </div>
+
+      {/* Section tabs */}
+      <div className="px-5 pt-2 pb-4">
+        <div className="flex gap-2 overflow-x-auto no-scrollbar">
+          {sections.map((s, i) => (
+            <button
+              key={s.id}
+              onClick={() => setActiveSectionIndex(i)}
+              className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all ${
+                i === activeSectionIndex
+                  ? "bg-white/25 text-white"
+                  : "bg-white/10 text-white/60 hover:text-white/80"
+              }`}
+            >
+              {s.title}
+            </button>
+          ))}
         </div>
       </div>
 
-      <div className="max-w-[480px] mx-auto px-4 py-6">
-        {/* Title */}
+      {/* Main content area — scrollable */}
+      <div className="flex-1 overflow-y-auto px-6 pb-32">
         <motion.div
+          key={activeSectionIndex}
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-6"
+          transition={{ duration: 0.3 }}
         >
-          <h1 className="text-xl font-semibold tracking-tight text-primary-app">Today's Briefing</h1>
-          <p className="text-xs text-muted-foreground mt-1 flex items-center justify-center gap-1">
-            <Clock className="h-3 w-3" /> 8 min · Wednesday, April 8, 2026
+          {/* Section title */}
+          <p className="text-white/50 text-xs font-semibold tracking-wider uppercase mb-4">
+            {activeSection.title}
           </p>
+
+          {/* Summary text — large, bold, readable */}
+          <p className="text-white text-[22px] font-bold leading-[1.45] tracking-[-0.01em] mb-6">
+            {activeSection.summary}
+          </p>
+
+          {/* Card items as bullet points */}
+          {activeSection.card_payload?.items && (
+            <div className="space-y-5">
+              {(activeSection.card_payload.items as string[]).map((item, i) => (
+                <div key={i} className="flex items-start gap-3">
+                  <span className="mt-2 shrink-0 h-3 w-3 rounded-full border-2 border-white/40" />
+                  <p className="text-white/85 text-[17px] font-medium leading-[1.5]">
+                    {item}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </motion.div>
+      </div>
 
-        {/* Waveform / Progress */}
-        <div className="mb-2">
-          <div className="h-2 w-full bg-accent rounded-full overflow-hidden cursor-pointer" onClick={(e) => {
-            const rect = e.currentTarget.getBoundingClientRect();
-            setProgress(((e.clientX - rect.left) / rect.width) * 100);
-          }}>
-            <motion.div
-              className="h-full bg-[hsl(var(--blue-accent))] rounded-full"
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-          <div className="flex justify-between mt-1.5">
-            <span className="text-[10px] text-muted-foreground">3:02</span>
-            <span className="text-[10px] text-muted-foreground">8:12</span>
-          </div>
-        </div>
-
-        {/* Controls */}
-        <div className="flex items-center justify-center gap-8 py-4">
-          <button className="text-muted-foreground hover:text-primary-app transition-colors">
-            <SkipBack className="h-5 w-5" strokeWidth={1.5} />
+      {/* Bottom fixed controls */}
+      <div className="fixed bottom-0 left-0 right-0 pb-[env(safe-area-inset-bottom,20px)] pb-6 pt-4 px-6">
+        <div className="yours-warm-gradient" />
+        <div className="flex items-center justify-between max-w-[480px] mx-auto relative">
+          {/* Speed button */}
+          <button
+            onClick={cycleSpeed}
+            className="h-12 w-12 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center"
+          >
+            <span className="text-white text-sm font-semibold">{speed}x</span>
           </button>
+
+          {/* Center Join button */}
+          <button className="h-12 px-8 rounded-full bg-white flex items-center gap-2 shadow-lg">
+            <MicOff className="h-4 w-4 text-neutral-800" strokeWidth={2} />
+            <span className="text-neutral-800 text-sm font-semibold">Join</span>
+          </button>
+
+          {/* Play/Pause button */}
           <button
             onClick={() => setIsPlaying(!isPlaying)}
-            className="h-14 w-14 rounded-full bg-foreground flex items-center justify-center shadow-[0_4px_16px_-4px_rgba(0,0,0,0.3)] hover:shadow-[0_6px_20px_-4px_rgba(0,0,0,0.4)] transition-shadow"
+            className="h-12 w-12 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center"
           >
             {isPlaying ? (
-              <Pause className="h-6 w-6 text-background" fill="currentColor" />
+              <Pause className="h-5 w-5 text-white" fill="white" strokeWidth={0} />
             ) : (
-              <Play className="h-6 w-6 text-background ml-0.5" fill="currentColor" />
+              <Play className="h-5 w-5 text-white ml-0.5" fill="white" strokeWidth={0} />
             )}
           </button>
-          <button className="text-muted-foreground hover:text-primary-app transition-colors">
-            <SkipForward className="h-5 w-5" strokeWidth={1.5} />
-          </button>
-        </div>
-
-        {/* Speed & Volume */}
-        <div className="flex items-center justify-center gap-4 mb-8">
-          <button className="text-muted-foreground hover:text-primary-app transition-colors">
-            <Volume2 className="h-4 w-4" strokeWidth={1.5} />
-          </button>
-          <div className="flex items-center gap-1">
-            {speeds.map((s) => (
-              <button
-                key={s}
-                onClick={() => setSpeed(s)}
-                className={`px-2 py-1 rounded-lg text-[10px] font-medium transition-all ${
-                  speed === s
-                    ? "bg-foreground text-background"
-                    : "text-muted-foreground hover:bg-accent"
-                }`}
-              >
-                {s}x
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Chapters */}
-        <div className="space-y-1">
-          <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-widest mb-3">Chapters</h2>
-          {chapters.map((ch, i) => (
-            <motion.button
-              key={ch.label}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.05 }}
-              onClick={() => setActiveChapter(i)}
-              className={`w-full text-left rounded-xl px-4 py-3 transition-all ${
-                i === activeChapter
-                  ? "bg-[hsl(var(--blue-accent-light))] border border-[hsl(var(--blue-accent)/0.2)]"
-                  : "hover:bg-accent border border-transparent"
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-base shrink-0">{ch.emoji}</span>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-primary-app">{ch.label}</span>
-                    <span className="text-[10px] text-muted-foreground">{ch.time}</span>
-                  </div>
-                  {i === activeChapter && (
-                    <motion.p
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: "auto" }}
-                      className="text-xs text-muted-foreground leading-relaxed mt-1.5"
-                    >
-                      {ch.text}
-                    </motion.p>
-                  )}
-                </div>
-              </div>
-            </motion.button>
-          ))}
-        </div>
-
-        {/* Chat bubble */}
-        <div className="fixed bottom-6 right-6 z-30">
-          <button
-            onClick={() => setShowChat(!showChat)}
-            className="h-12 w-12 rounded-full bg-foreground text-background flex items-center justify-center shadow-[0_4px_20px_-4px_rgba(0,0,0,0.3)] hover:shadow-[0_6px_24px_-4px_rgba(0,0,0,0.4)] transition-shadow"
-          >
-            <MessageSquare className="h-5 w-5" strokeWidth={1.5} />
-          </button>
-
-          {showChat && (
-            <motion.div
-              initial={{ opacity: 0, y: 10, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              className="absolute bottom-16 right-0 w-[320px] rounded-2xl border border-border bg-card shadow-[0_8px_40px_-8px_rgba(0,0,0,0.2)] overflow-hidden"
-            >
-              <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-                <span className="text-sm font-medium text-primary-app">Ask about this briefing</span>
-                <button onClick={() => setShowChat(false)}>
-                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                </button>
-              </div>
-              <div className="p-4 min-h-[160px] flex items-end">
-                <input
-                  type="text"
-                  placeholder="e.g. Tell me more about the Anthropic raise..."
-                  className="w-full rounded-xl border border-border bg-accent px-4 py-2.5 text-sm text-primary-app placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[hsl(var(--blue-accent))] transition-all"
-                />
-              </div>
-            </motion.div>
-          )}
         </div>
       </div>
     </div>
