@@ -14,17 +14,7 @@ export default {
     },
     extend: {
       fontFamily: {
-        sans: ["DM Sans", "Nunito", "system-ui", "-apple-system", "sans-serif"],
-      },
-      fontSize: {
-        "2xs": ["11px", { lineHeight: "16px", letterSpacing: "0.02em" }],
-        xs: ["12px", { lineHeight: "16px", letterSpacing: "0.01em" }],
-        sm: ["13px", { lineHeight: "20px" }],
-        base: ["15px", { lineHeight: "24px" }],
-        lg: ["17px", { lineHeight: "26px" }],
-        xl: ["22px", { lineHeight: "30px", letterSpacing: "-0.01em" }],
-        "2xl": ["28px", { lineHeight: "36px", letterSpacing: "-0.02em" }],
-        "3xl": ["36px", { lineHeight: "44px", letterSpacing: "-0.02em" }],
+        sans: ["Inter", "system-ui", "-apple-system", "sans-serif"],
       },
       colors: {
         border: "hsl(var(--border))",
@@ -89,11 +79,16 @@ export default {
           from: { opacity: "0", transform: "translateY(8px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
+        "pulse-soft": {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0.7" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "fade-in": "fade-in 0.5s ease-out forwards",
+        "pulse-soft": "pulse-soft 2s ease-in-out infinite",
       },
     },
   },

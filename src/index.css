@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Nunito:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,56 +6,72 @@
 
 @layer base {
   :root {
-    --background: 0 0% 98%;
-    --foreground: 0 0% 15%;
+    --background: 0 0% 99%;
+    --foreground: 0 0% 8%;
 
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 15%;
+    --card-foreground: 0 0% 8%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 15%;
+    --popover-foreground: 0 0% 8%;
 
-    --primary: 0 0% 15%;
-    --primary-foreground: 0 0% 98%;
+    --primary: 0 0% 8%;
+    --primary-foreground: 0 0% 99%;
 
-    --secondary: 0 0% 95%;
-    --secondary-foreground: 0 0% 15%;
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 8%;
 
-    --muted: 0 0% 93%;
+    --muted: 0 0% 94%;
     --muted-foreground: 0 0% 45%;
 
-    --accent: 0 0% 95%;
-    --accent-foreground: 0 0% 15%;
+    --accent: 0 0% 96%;
+    --accent-foreground: 0 0% 8%;
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 0 0% 91%;
-    --input: 0 0% 91%;
-    --ring: 0 0% 15%;
+    --border: 0 0% 92%;
+    --input: 0 0% 92%;
+    --ring: 0 0% 8%;
 
-    --radius: 9999px;
+    --radius: 0.75rem;
 
     --sidebar-background: 0 0% 100%;
     --sidebar-foreground: 0 0% 45%;
-    --sidebar-primary: 0 0% 15%;
+    --sidebar-primary: 0 0% 8%;
     --sidebar-primary-foreground: 0 0% 98%;
     --sidebar-accent: 0 0% 96%;
-    --sidebar-accent-foreground: 0 0% 15%;
+    --sidebar-accent-foreground: 0 0% 8%;
     --sidebar-border: 0 0% 93%;
-    --sidebar-ring: 0 0% 15%;
+    --sidebar-ring: 0 0% 8%;
 
-    /* Hugo-specific tokens */
-    --text-primary: 0 0% 10%;
-    --text-secondary: 0 0% 40%;
-    --text-subtle: 0 0% 60%;
-    --surface-hover: 0 0% 96%;
-    --surface-active: 0 0% 93%;
-    --urgency-high: 0 72% 55%;
-    --urgency-medium: 35 90% 52%;
-    --urgency-low: 152 60% 42%;
+    /* Yours-specific tokens */
+    --yours-warm-from: 36 80% 50%;
+    --yours-warm-to: 24 85% 38%;
+    --yours-gold: 42 90% 62%;
+    --yours-cream: 40 60% 92%;
     --blue-accent: 210 90% 56%;
     --blue-accent-light: 210 90% 95%;
+  }
+
+  .dark {
+    --background: 0 0% 4%;
+    --foreground: 0 0% 95%;
+    --card: 0 0% 7%;
+    --card-foreground: 0 0% 95%;
+    --popover: 0 0% 7%;
+    --popover-foreground: 0 0% 95%;
+    --primary: 0 0% 95%;
+    --primary-foreground: 0 0% 4%;
+    --secondary: 0 0% 12%;
+    --secondary-foreground: 0 0% 95%;
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 55%;
+    --accent: 0 0% 15%;
+    --accent-foreground: 0 0% 95%;
+    --border: 0 0% 18%;
+    --input: 0 0% 18%;
+    --ring: 0 0% 95%;
   }
 }
 
@@ -69,97 +85,13 @@
 }
 
 @layer utilities {
-  .text-primary-app {
-    color: hsl(var(--text-primary));
-  }
-  .text-secondary-app {
-    color: hsl(var(--text-secondary));
-  }
-  .text-subtle {
-    color: hsl(var(--text-subtle));
-  }
-  .surface-card {
-    background-color: hsl(var(--card));
-  }
-  .surface-hover {
-    background-color: hsl(var(--surface-hover));
-  }
-  .urgency-high {
-    color: hsl(var(--urgency-high));
-  }
-  .urgency-medium {
-    color: hsl(var(--urgency-medium));
-  }
-  .urgency-low {
-    color: hsl(var(--urgency-low));
-  }
-  .blue-accent {
-    color: hsl(var(--blue-accent));
-  }
-  .bg-blue-accent {
-    background-color: hsl(var(--blue-accent));
-  }
-
-  .hero-brand-orb {
-    background:
-      radial-gradient(
-        58% 62% at 50% 78%,
-        hsl(var(--blue-accent) / 0.24) 0%,
-        hsl(var(--blue-accent) / 0.14) 36%,
-        hsl(var(--blue-accent-light) / 0.08) 62%,
-        transparent 100%
-      ),
-      radial-gradient(
-        42% 50% at 28% 88%,
-        hsl(var(--blue-accent) / 0.16) 0%,
-        transparent 100%
-      ),
-      radial-gradient(
-        44% 52% at 72% 86%,
-        hsl(var(--blue-accent) / 0.14) 0%,
-        transparent 100%
-      );
-    filter: blur(14px) saturate(110%);
-    opacity: 0.92;
-    mix-blend-mode: screen;
-  }
-
-  .hero-brand-wash {
+  .yours-warm-gradient {
     background: linear-gradient(
-      180deg,
-      hsl(var(--background) / 0) 0%,
-      hsl(var(--blue-accent-light) / 0.18) 34%,
-      hsl(var(--blue-accent) / 0.12) 68%,
-      hsl(var(--background) / 0.78) 100%
+      165deg,
+      hsl(42, 75%, 55%) 0%,
+      hsl(36, 80%, 48%) 30%,
+      hsl(28, 82%, 40%) 60%,
+      hsl(22, 78%, 32%) 100%
     );
-  }
-
-  .hero-brand-columns {
-    background-image:
-      linear-gradient(
-        180deg,
-        hsl(var(--blue-accent) / 0.12) 0%,
-        hsl(var(--blue-accent) / 0.03) 56%,
-        transparent 100%
-      ),
-      repeating-linear-gradient(
-        90deg,
-        hsl(var(--blue-accent) / 0.16) 0 1px,
-        transparent 1px 92px
-      );
-    -webkit-mask-image: linear-gradient(
-      to top,
-      hsl(var(--foreground) / 0.95) 0%,
-      hsl(var(--foreground) / 0.72) 46%,
-      transparent 100%
-    );
-    mask-image: linear-gradient(
-      to top,
-      hsl(var(--foreground) / 0.95) 0%,
-      hsl(var(--foreground) / 0.72) 46%,
-      transparent 100%
-    );
-    opacity: 0.62;
-    mix-blend-mode: soft-light;
   }
 }
