@@ -17,7 +17,7 @@ export default function Settings() {
   const [tab, setTab] = useState(0);
   const [name, setName] = useState(user?.full_name || "");
   const [deliveryTime, setDeliveryTime] = useState(user?.delivery_time || "07:00");
-  const [tone, setTone] = useState(user?.tone || "upbeat");
+  const [tone, setTone] = useState<string>(user?.tone || "upbeat");
   const [length, setLength] = useState(user?.preferred_length_minutes || 8);
   const [freeformInterests, setFreeformInterests] = useState("");
   const [selectedPackages, setSelectedPackages] = useState<string[]>([]);
