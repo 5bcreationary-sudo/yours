@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Headphones, Play, Calendar, Clock, Settings, ChevronRight, BarChart3, Mic, Sparkles, Bell, LogOut } from "lucide-react";
+import { Play, Calendar, Clock, Settings, ChevronRight, BarChart3, Mic, Sparkles, Bell, LogOut } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
+import { YoursLogo } from "@/components/YoursLogo";
 
 const recentBriefings = [
   { date: "Today", length: "8 min", status: "ready", listened: false },
@@ -34,9 +35,7 @@ export default function Dashboard() {
       <div className="sticky top-0 z-20 bg-background/80 backdrop-blur-xl border-b border-border">
         <div className="max-w-[600px] mx-auto flex items-center justify-between px-4 py-3">
           <div className="flex items-center gap-2">
-            <div className="h-7 w-7 rounded-full bg-foreground flex items-center justify-center">
-              <Headphones className="h-3.5 w-3.5 text-background" strokeWidth={2} />
-            </div>
+            <YoursLogo size={48} />
             <span className="text-[15px] font-semibold tracking-tight text-primary-app">Yours</span>
           </div>
           <div className="flex items-center gap-2">
@@ -150,23 +149,6 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* DeepCast */}
-            <div className="rounded-2xl border border-border bg-card p-5">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="h-10 w-10 rounded-xl bg-accent flex items-center justify-center">
-                  <Mic className="h-5 w-5 text-[hsl(var(--blue-accent))]" strokeWidth={1.5} />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-primary-app">DeepCast</p>
-                  <p className="text-[11px] text-muted-foreground">Generate a custom episode on any topic</p>
-                </div>
-              </div>
-              <input
-                type="text"
-                placeholder='e.g. "Deep dive on the latest AI chip race"'
-                className="w-full rounded-xl border border-border bg-accent px-4 py-2.5 text-sm text-primary-app placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-[hsl(var(--blue-accent))] transition-all"
-              />
-            </div>
           </motion.div>
         )}
 

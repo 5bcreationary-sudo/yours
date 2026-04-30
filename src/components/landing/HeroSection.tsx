@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
-import { Headphones, MessageSquare, Play } from "lucide-react";
+import { MessageSquare, Play } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { YoursLogo } from "@/components/YoursLogo";
 
 function PhoneMockup() {
   return (
@@ -26,9 +27,7 @@ function PhoneMockup() {
           <div className="px-4 py-3">
             <div className="rounded-2xl bg-card border border-border p-4 shadow-sm">
               <div className="flex items-center gap-2 mb-2">
-                <div className="h-6 w-6 rounded-full bg-foreground flex items-center justify-center">
-                  <Headphones className="h-3 w-3 text-background" strokeWidth={2} />
-                </div>
+                <YoursLogo size={32} />
                 <span className="text-[11px] font-semibold text-primary-app">Yours</span>
                 <span className="text-[10px] text-muted-foreground ml-auto">now</span>
               </div>

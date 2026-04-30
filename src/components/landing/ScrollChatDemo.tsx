@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState } from "react";
 import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion";
-import { Headphones, Play, SkipForward, Volume2 } from "lucide-react";
+import { Play, SkipForward, Volume2 } from "lucide-react";
+import { YoursLogo } from "@/components/YoursLogo";
 
 const chapters = [
   { emoji: "☀️", label: "Weather", time: "0:00", text: "Sunny skies today, high of 72°F. Perfect for your outdoor lunch meeting." },
@@ -56,9 +57,7 @@ export function ScrollChatDemo() {
             <div className="rounded-3xl overflow-hidden bg-card border border-border">
               {/* Header */}
               <div className="flex items-center gap-3 px-5 py-4 border-b border-border">
-                <div className="h-8 w-8 rounded-full bg-foreground flex items-center justify-center">
-                  <Headphones className="h-4 w-4 text-background" strokeWidth={2} />
-                </div>
+                <YoursLogo size={48} />
                 <div>
                   <p className="text-sm font-semibold text-primary-app">Today's Briefing</p>
                   <p className="text-[11px] text-muted-foreground">8 min · Wednesday, Apr 8</p>

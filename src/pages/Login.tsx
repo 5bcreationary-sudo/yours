@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
@@ -9,10 +9,31 @@ import { toast } from "sonner";
 
 export default function Login() {
   const navigate = useNavigate();
-  const { signInWithGoogle, signInWithMagicLink } = useAuth();
+  const { user, signInWithGoogle, signInWithPassword, signInWithMagicLink } = useAuth();
+
+  // Redirect once signed in
+  useEffect(() => {
+    if (user) navigate(user.onboarding_complete ? "/app" : "/onboarding", { replace: true });
+  }, [user, navigate]);
   const [email, setEmail] = useState("");
-  const [linkSent, setLinkSent] = useState(false);
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState<"password" | "magic">("password");
+  const [magicSent, setMagicSent] = useState(false);
+
+  const handlePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) return;
+    setLoading(true);
+    try {
+      await signInWithPassword(email, password);
+    } catch (err) {
+      console.error("[login] password sign-in failed", err);
+      toast.error(err instanceof Error ? err.message : "Invalid email or password");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleMagicLink = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,11 +41,11 @@ export default function Login() {
     setLoading(true);
     try {
       await signInWithMagicLink(email);
-      setLinkSent(true);
+      setMagicSent(true);
       toast.success("Check your email for a login link");
-      navigate("/onboarding");
-    } catch {
-      toast.error("Something went wrong");
+    } catch (err) {
+      console.error("[login] magic link failed", err);
+      toast.error(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setLoading(false);
     }
@@ -33,9 +54,9 @@ export default function Login() {
   const handleGoogle = async () => {
     try {
       await signInWithGoogle();
-      navigate("/onboarding");
-    } catch {
-      toast.error("Google sign-in failed");
+    } catch (err) {
+      console.error("[login] Google sign-in failed", err);
+      toast.error(err instanceof Error ? err.message : "Google sign-in failed");
     }
   };
 
@@ -58,20 +79,38 @@ export default function Login() {
           <div className="relative flex justify-center"><span className="bg-background px-3 text-xs text-muted-foreground">or</span></div>
         </div>
 
-        {linkSent ? (
+        {magicSent ? (
           <div className="text-center py-8">
             <Mail className="h-8 w-8 mx-auto text-muted-foreground mb-3" />
             <p className="text-sm font-medium mb-1">Check your email</p>
             <p className="text-sm text-muted-foreground">We sent a magic link to {email}</p>
           </div>
+        ) : mode === "password" ? (
+          <form onSubmit={handlePassword} className="space-y-3">
+            <Input type="email" placeholder="you@email.com" value={email} onChange={(e) => setEmail(e.target.value)} className="h-11 rounded-xl" required />
+            <Input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} className="h-11 rounded-xl" required />
+            <Button type="submit" className="w-full h-11 rounded-xl" disabled={loading}>{loading ? "Signing in..." : "Sign in"}</Button>
+            <button type="button" onClick={() => setMode("magic")} className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors pt-1">
+              Use magic link instead
+            </button>
+          </form>
         ) : (
           <form onSubmit={handleMagicLink} className="space-y-3">
             <Input type="email" placeholder="you@email.com" value={email} onChange={(e) => setEmail(e.target.value)} className="h-11 rounded-xl" required />
             <Button type="submit" className="w-full h-11 rounded-xl" disabled={loading}>{loading ? "Sending..." : "Send magic link"}</Button>
+            <button type="button" onClick={() => setMode("password")} className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors pt-1">
+              Use email &amp; password instead
+            </button>
           </form>
         )}
 
-        <p className="text-center text-sm text-muted-foreground mt-6">
+        <p className="text-center text-xs text-muted-foreground mt-6 leading-relaxed">
+          By signing in, you agree to our{" "}
+          <Link to="/terms" className="text-foreground underline underline-offset-2">Terms of Service</Link> and{" "}
+          <Link to="/privacy" className="text-foreground underline underline-offset-2">Privacy Policy</Link>.
+        </p>
+
+        <p className="text-center text-sm text-muted-foreground mt-4">
           Don't have an account? <Link to="/signup" className="text-foreground font-medium hover:underline">Sign up</Link>
         </p>
       </motion.div>

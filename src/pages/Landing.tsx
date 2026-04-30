@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { ArrowRight, Headphones, Zap, Clock, Mic, Shield, Smartphone } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
+import { YoursLogo } from "@/components/YoursLogo";
 
 const features = [
   { icon: Clock, title: "5-minute morning brief", desc: "Weather, calendar, emails, and news — all in one listen." },
@@ -19,7 +20,10 @@ export default function Landing() {
       {/* Nav */}
       <nav className="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-xl border-b border-border">
         <div className="max-w-5xl mx-auto flex items-center justify-between px-6 h-14">
-          <span className="text-base font-semibold tracking-tight">Yours</span>
+          <div className="flex items-center gap-2">
+            <YoursLogo size={48} />
+            <span className="text-base font-semibold tracking-tight">Yours</span>
+          </div>
           <div className="flex items-center gap-3">
             <button onClick={() => navigate("/login")} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
               Log in
@@ -152,8 +156,8 @@ export default function Landing() {
         <div className="max-w-5xl mx-auto flex items-center justify-between text-sm text-muted-foreground">
           <span>© 2026 Yours</span>
           <div className="flex gap-4">
-            <a href="#" className="hover:text-foreground transition-colors">Privacy</a>
-            <a href="#" className="hover:text-foreground transition-colors">Terms</a>
+            <Link to="/privacy" className="hover:text-foreground transition-colors">Privacy</Link>
+            <Link to="/terms" className="hover:text-foreground transition-colors">Terms</Link>
           </div>
         </div>
       </footer>

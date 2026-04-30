@@ -1,28 +1,57 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Mail } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Signup() {
   const navigate = useNavigate();
-  const { signInWithGoogle, signInWithMagicLink } = useAuth();
-  const [email, setEmail] = useState("");
-  const [loading, setLoading] = useState(false);
+  const { user, signInWithGoogle, signUpWithPassword, signInWithMagicLink } = useAuth();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Redirect once signed in
+  useEffect(() => {
+    if (user) navigate(user.onboarding_complete ? "/app" : "/onboarding", { replace: true });
+  }, [user, navigate]);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [mode, setMode] = useState<"password" | "magic">("password");
+  const [confirmSent, setConfirmSent] = useState(false);
+
+  const handlePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) return;
+    if (password.length < 6) {
+      toast.error("Password must be at least 6 characters");
+      return;
+    }
+    setLoading(true);
+    try {
+      await signUpWithPassword(email, password);
+      // If email confirmation is disabled, onAuthStateChange will fire and
+      // the useEffect redirect handles navigation. If enabled, show prompt.
+      setConfirmSent(true);
+    } catch (err) {
+      console.error("[signup] password signup failed", err);
+      toast.error(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMagicLink = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) return;
     setLoading(true);
     try {
       await signInWithMagicLink(email);
-      toast.success("Account created!");
-      navigate("/onboarding");
-    } catch {
-      toast.error("Something went wrong");
+      setConfirmSent(true);
+    } catch (err) {
+      console.error("[signup] magic link failed", err);
+      toast.error(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setLoading(false);
     }
@@ -31,9 +60,9 @@ export default function Signup() {
   const handleGoogle = async () => {
     try {
       await signInWithGoogle();
-      navigate("/onboarding");
-    } catch {
-      toast.error("Google sign-in failed");
+    } catch (err) {
+      console.error("[signup] Google sign-in failed", err);
+      toast.error(err instanceof Error ? err.message : "Google sign-in failed");
     }
   };
 
@@ -56,12 +85,42 @@ export default function Signup() {
           <div className="relative flex justify-center"><span className="bg-background px-3 text-xs text-muted-foreground">or</span></div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <Input type="email" placeholder="you@email.com" value={email} onChange={(e) => setEmail(e.target.value)} className="h-11 rounded-xl" required />
-          <Button type="submit" className="w-full h-11 rounded-xl" disabled={loading}>{loading ? "Creating..." : "Get started free"}</Button>
-        </form>
+        {confirmSent ? (
+          <div className="text-center py-8">
+            <Mail className="h-8 w-8 mx-auto text-muted-foreground mb-3" />
+            <p className="text-sm font-medium mb-1">Check your email</p>
+            <p className="text-sm text-muted-foreground">
+              {mode === "magic"
+                ? `We sent a sign-in link to ${email}`
+                : `We sent a confirmation link to ${email}. Click it to activate your account.`}
+            </p>
+          </div>
+        ) : mode === "password" ? (
+          <form onSubmit={handlePassword} className="space-y-3">
+            <Input type="email" placeholder="you@email.com" value={email} onChange={(e) => setEmail(e.target.value)} className="h-11 rounded-xl" required />
+            <Input type="password" placeholder="Password (min 6 characters)" value={password} onChange={(e) => setPassword(e.target.value)} className="h-11 rounded-xl" required minLength={6} />
+            <Button type="submit" className="w-full h-11 rounded-xl" disabled={loading}>{loading ? "Creating..." : "Get started free"}</Button>
+            <button type="button" onClick={() => setMode("magic")} className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors pt-1">
+              Use magic link instead
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={handleMagicLink} className="space-y-3">
+            <Input type="email" placeholder="you@email.com" value={email} onChange={(e) => setEmail(e.target.value)} className="h-11 rounded-xl" required />
+            <Button type="submit" className="w-full h-11 rounded-xl" disabled={loading}>{loading ? "Sending..." : "Send magic link"}</Button>
+            <button type="button" onClick={() => setMode("password")} className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors pt-1">
+              Use email &amp; password instead
+            </button>
+          </form>
+        )}
 
-        <p className="text-center text-sm text-muted-foreground mt-6">
+        <p className="text-center text-xs text-muted-foreground mt-6 leading-relaxed">
+          By signing up, you agree to our{" "}
+          <Link to="/terms" className="text-foreground underline underline-offset-2">Terms of Service</Link> and{" "}
+          <Link to="/privacy" className="text-foreground underline underline-offset-2">Privacy Policy</Link>.
+        </p>
+
+        <p className="text-center text-sm text-muted-foreground mt-4">
           Already have an account? <Link to="/login" className="text-foreground font-medium hover:underline">Log in</Link>
         </p>
       </motion.div>

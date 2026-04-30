@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Headphones } from "lucide-react";
+import { YoursLogo } from "@/components/YoursLogo";
 
 export function LandingNav() {
   const navigate = useNavigate();
@@ -8,9 +8,7 @@ export function LandingNav() {
     <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50">
       <nav className="flex items-center gap-1 rounded-full border border-border/60 bg-card/70 backdrop-blur-2xl shadow-[0_2px_20px_-4px_rgba(0,0,0,0.12),0_0_0_1px_rgba(0,0,0,0.04)] px-2.5 py-2">
         <div className="flex items-center gap-2 px-3">
-          <div className="h-7 w-7 rounded-full bg-foreground flex items-center justify-center">
-            <Headphones className="h-3.5 w-3.5 text-background" strokeWidth={2} />
-          </div>
+          <YoursLogo size={48} />
           <span className="text-[15px] font-semibold tracking-tight text-primary-app">Yours</span>
         </div>
         <div className="h-4 w-px bg-border mx-1" />

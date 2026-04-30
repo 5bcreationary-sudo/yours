@@ -31,7 +31,6 @@ const plans = [
       "Multi-voice conversational style",
       "Voice cloning (your voice)",
       "Podcast feed export",
-      "DeepCast on-demand episodes",
       "Priority delivery",
     ],
     cta: "Start Free Trial",

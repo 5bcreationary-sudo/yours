@@ -3,7 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthContext, useAuthState } from "@/hooks/useAuth";
+import { AuthContext, useAuthState, useAuth } from "@/hooks/useAuth";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
@@ -12,11 +12,13 @@ import AppHome from "./pages/AppHome";
 import Player from "./pages/Player";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
+import Privacy from "./pages/Privacy";
+import Terms from "./pages/Terms";
 
 const queryClient = new QueryClient();
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuthState();
+  const { user, loading } = useAuth();
   if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="animate-pulse-soft text-muted-foreground">Loading...</div></div>;
   if (!user) return <Navigate to="/login" replace />;
   if (!user.onboarding_complete) return <Navigate to="/onboarding" replace />;
@@ -24,7 +26,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function OnboardingRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuthState();
+  const { user, loading } = useAuth();
   if (loading) return null;
   if (!user) return <Navigate to="/login" replace />;
   if (user.onboarding_complete) return <Navigate to="/app" replace />;
@@ -50,6 +52,8 @@ const App = () => {
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="/b/:briefingId" element={<Player />} />
               <Route path="/player/:id" element={<Player />} />
+              <Route path="/privacy" element={<Privacy />} />
+              <Route path="/terms" element={<Terms />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

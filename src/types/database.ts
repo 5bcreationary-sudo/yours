@@ -1,36 +1,43 @@
-// Database types for Yours — matches the Supabase schema
-// TODO: Codex — auto-generate these from Supabase once tables are created
+// Database types for Yours — matches the Supabase schema in supabase/migrations.
+// After deploy, run `supabase gen types typescript` to diff against this file.
 
 export interface UserProfile {
   id: string;
   email: string;
   full_name: string | null;
   avatar_url: string | null;
+  phone_e164: string | null;
   timezone: string;
-  delivery_time: string; // e.g. "07:00"
+  delivery_time: string; // HH:MM or HH:MM:SS from the time column
   preferred_length_minutes: number; // 3, 8, or 12
   tone: "upbeat" | "calm" | "professional";
   briefing_mode: "morning" | "commute" | "executive";
+  briefing_style: "straightforward" | "conversational";
   onboarding_complete: boolean;
   evening_preference: boolean;
   home_address: Record<string, unknown> | null;
   work_address: Record<string, unknown> | null;
   created_at: string;
+  updated_at: string;
 }
 
 export interface UserInterest {
   id: string;
   user_id: string;
   freeform_text: string | null;
-  selected_packages: string[] | null; // e.g. ["tech-ai", "sports-nfl"]
-  tags: string[] | null;
+  selected_packages: string[];
+  tags: string[];
+  updated_at: string;
 }
 
 export interface UserSource {
   id: string;
   user_id: string;
   type: "gmail" | "calendar" | "rss";
-  config: Record<string, unknown>; // OAuth tokens, feed URLs, etc.
+  config: Record<string, unknown>;
+  enabled: boolean;
+  last_synced_at: string | null;
+  created_at: string;
 }
 
 export interface Briefing {
@@ -38,10 +45,26 @@ export interface Briefing {
   user_id: string;
   date: string;
   status: "pending" | "generating" | "ready" | "failed";
-  sections: BriefingSection[];
   listened_at: string | null;
+  audio_url: string | null;
+  audio_duration_seconds: number | null;
+  /** Per-section start times in seconds from t=0 of the audio file. Length
+   *  matches sections.length when the TTS pipeline computed real offsets;
+   *  null on legacy rows or when offsets weren't derivable. */
+  section_offsets: number[] | null;
+  error?: string | null;
+  generation_started_at?: string | null;
+  generation_completed_at?: string | null;
   created_at: string;
 }
+
+export type BriefingListItem = Briefing & {
+  sections_count: number;
+  preview_titles: string[];
+};
+
+// Player query result — sections are always joined in at the fetch layer.
+export type BriefingWithSections = Briefing & { sections: BriefingSection[] };
 
 export interface BriefingSection {
   id: string;
@@ -73,7 +96,7 @@ export const RSS_PRESETS: RSSPreset[] = [
   { id: "hacker-news", name: "Hacker News", url: "https://hnrss.org/frontpage", category: "Tech", icon: "💻" },
   { id: "espn-top", name: "ESPN Top Headlines", url: "https://www.espn.com/espn/rss/news", category: "Sports", icon: "🏈" },
   { id: "wired", name: "Wired", url: "https://www.wired.com/feed/rss", category: "Tech", icon: "⚡" },
-  { id: "reuters", name: "Reuters Top News", url: "https://feeds.reuters.com/reuters/topNews", category: "News", icon: "🔵" },
+  { id: "google-news", name: "Google News", url: "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en", category: "News", icon: "🔵" },
 ];
 
 // Interest packages

@@ -12,6 +12,14 @@ dist
 dist-ssr
 *.local
 
+# Local test/scratch audio
+test.mp3
+test*.wav
+
+# Supabase CLI cache/temp (per-developer state, not source)
+supabase/.temp/
+supabase/.branches/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -85,6 +85,7 @@
 }
 
 @layer utilities {
+  /* Base warm gradient (kept for any consumer that imports it directly). */
   .yours-warm-gradient {
     background: linear-gradient(
       165deg,
@@ -93,5 +94,71 @@
       hsl(28, 82%, 40%) 60%,
       hsl(22, 78%, 32%) 100%
     );
+  }
+
+  /* Per-section warm variants. The player cycles through these as the active
+     section changes — each is a subtle hue/saturation drift around the same
+     golden-brown / orange family so the overall premium aesthetic stays. */
+  .yours-warm-gradient-0 {
+    background: linear-gradient(165deg, hsl(42, 75%, 55%) 0%, hsl(36, 80%, 48%) 30%, hsl(28, 82%, 40%) 60%, hsl(22, 78%, 32%) 100%);
+  }
+  .yours-warm-gradient-1 {
+    background: linear-gradient(165deg, hsl(38, 72%, 55%) 0%, hsl(32, 78%, 46%) 30%, hsl(24, 82%, 38%) 60%, hsl(18, 80%, 30%) 100%);
+  }
+  .yours-warm-gradient-2 {
+    background: linear-gradient(165deg, hsl(46, 70%, 56%) 0%, hsl(38, 78%, 48%) 30%, hsl(30, 80%, 40%) 60%, hsl(24, 76%, 32%) 100%);
+  }
+  .yours-warm-gradient-3 {
+    background: linear-gradient(165deg, hsl(34, 76%, 54%) 0%, hsl(28, 80%, 46%) 30%, hsl(22, 82%, 38%) 60%, hsl(16, 80%, 30%) 100%);
+  }
+  .yours-warm-gradient-4 {
+    background: linear-gradient(165deg, hsl(50, 68%, 54%) 0%, hsl(42, 76%, 46%) 30%, hsl(34, 80%, 38%) 60%, hsl(26, 76%, 30%) 100%);
+  }
+
+  /* Per-section-TYPE gradients. Each section type gets a distinct color
+     family. All keep the same depth (lightish top → deep bottom) and the
+     same 165deg angle so the visual rhythm stays consistent — just hue
+     shifts. The Player crossfades between these as the active section
+     changes. */
+
+  /* Weather — sky blue → twilight indigo */
+  .yours-section-weather {
+    background: linear-gradient(165deg, hsl(208, 78%, 60%) 0%, hsl(214, 76%, 48%) 30%, hsl(220, 70%, 36%) 60%, hsl(228, 60%, 24%) 100%);
+  }
+  /* Traffic — amber → burnt rust */
+  .yours-section-traffic {
+    background: linear-gradient(165deg, hsl(36, 84%, 58%) 0%, hsl(28, 82%, 46%) 30%, hsl(18, 80%, 38%) 60%, hsl(10, 70%, 28%) 100%);
+  }
+  /* Calendar — soft violet → deep plum */
+  .yours-section-calendar {
+    background: linear-gradient(165deg, hsl(268, 60%, 62%) 0%, hsl(266, 58%, 50%) 30%, hsl(262, 56%, 38%) 60%, hsl(258, 50%, 26%) 100%);
+  }
+  /* Emails — sea-green → forest */
+  .yours-section-emails {
+    background: linear-gradient(165deg, hsl(168, 56%, 52%) 0%, hsl(164, 60%, 40%) 30%, hsl(160, 64%, 30%) 60%, hsl(156, 60%, 20%) 100%);
+  }
+  /* News — crimson → wine */
+  .yours-section-news {
+    background: linear-gradient(165deg, hsl(0, 70%, 56%) 0%, hsl(354, 68%, 44%) 30%, hsl(348, 64%, 34%) 60%, hsl(342, 56%, 22%) 100%);
+  }
+  /* Interests — magenta → mulberry */
+  .yours-section-interests {
+    background: linear-gradient(165deg, hsl(322, 64%, 60%) 0%, hsl(316, 62%, 48%) 30%, hsl(310, 60%, 36%) 60%, hsl(304, 56%, 24%) 100%);
+  }
+  /* Sports — vivid orange → ember red */
+  .yours-section-sports {
+    background: linear-gradient(165deg, hsl(20, 88%, 58%) 0%, hsl(14, 84%, 46%) 30%, hsl(8, 80%, 36%) 60%, hsl(2, 72%, 24%) 100%);
+  }
+  /* Health — emerald → deep teal */
+  .yours-section-health {
+    background: linear-gradient(165deg, hsl(150, 64%, 52%) 0%, hsl(160, 68%, 40%) 30%, hsl(172, 72%, 30%) 60%, hsl(184, 68%, 20%) 100%);
+  }
+  /* Entertainment — indigo → midnight purple */
+  .yours-section-entertainment {
+    background: linear-gradient(165deg, hsl(244, 70%, 64%) 0%, hsl(248, 64%, 50%) 30%, hsl(252, 60%, 36%) 60%, hsl(256, 56%, 22%) 100%);
+  }
+  /* Fallback — original warm */
+  .yours-section-default {
+    background: linear-gradient(165deg, hsl(42, 75%, 55%) 0%, hsl(36, 80%, 48%) 30%, hsl(28, 82%, 40%) 60%, hsl(22, 78%, 32%) 100%);
   }
 }

@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Headphones } from "lucide-react";
+import { YoursLogo } from "@/components/YoursLogo";
 
 export function LandingFooter() {
   return (
@@ -12,9 +12,7 @@ export function LandingFooter() {
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="h-5 w-5 rounded-full bg-foreground flex items-center justify-center">
-            <Headphones className="h-2.5 w-2.5 text-background" strokeWidth={2} />
-          </div>
+          <YoursLogo size={36} />
           <span className="text-sm text-muted-foreground">© 2026 Yours</span>
         </div>
         <div className="flex items-center gap-6">
