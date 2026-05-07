@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
-import { Check, Loader2 } from "lucide-react";
+import { Check, Loader2, Play } from "lucide-react";
 import { getBriefingForPlayer } from "@/lib/supabase";
 import { useWeatherPreview } from "@/hooks/useWeatherPreview";
 
@@ -112,15 +112,16 @@ export function GenerationFlow({ briefingId, location, tags = [], onReady }: Pro
     };
   }, [activeStep]);
 
-  // When the briefing is ready, mark all steps complete then call onReady.
+  // When the briefing is ready, mark all steps complete and show a play button.
+  const [showPlayButton, setShowPlayButton] = useState(false);
   const readyHandledRef = useRef(false);
   useEffect(() => {
     if (!ready || readyHandledRef.current) return;
     readyHandledRef.current = true;
     setActiveStep(4); // past last step → all green
-    const t = window.setTimeout(() => onReady(briefingId), 600);
+    const t = window.setTimeout(() => setShowPlayButton(true), 600);
     return () => window.clearTimeout(t);
-  }, [ready, onReady, briefingId]);
+  }, [ready, briefingId]);
 
   const tagsSlice = useMemo(() => tags.slice(0, 3), [tags]);
 
@@ -281,10 +282,31 @@ export function GenerationFlow({ briefingId, location, tags = [], onReady }: Pro
         </div>
       </div>
 
-      <div className="pb-[env(safe-area-inset-bottom,16px)] pb-6 px-6 text-center">
-        <p className="text-white/50 text-[11px]">
-          Stay on this page — your briefing will start automatically.
-        </p>
+      <div className="pb-[env(safe-area-inset-bottom,16px)] pb-8 px-6 flex flex-col items-center">
+        <AnimatePresence mode="wait">
+          {showPlayButton ? (
+            <motion.button
+              key="play"
+              initial={{ opacity: 0, scale: 0.9, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ duration: 0.4, type: "spring", damping: 18 }}
+              type="button"
+              onClick={() => onReady(briefingId)}
+              className="flex items-center justify-center gap-2 bg-white text-orange-800 font-semibold text-base px-10 py-4 rounded-2xl shadow-xl active:scale-95 transition-transform"
+            >
+              <Play className="h-5 w-5 fill-current" />
+              Play your briefing
+            </motion.button>
+          ) : (
+            <motion.p
+              key="waiting"
+              exit={{ opacity: 0 }}
+              className="text-white/50 text-[11px]"
+            >
+              Stay on this page — your briefing will start automatically.
+            </motion.p>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

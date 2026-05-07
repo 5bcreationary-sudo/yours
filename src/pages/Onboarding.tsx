@@ -16,7 +16,6 @@ import {
   HeartPulse,
   Building2,
   Music,
-  Sparkles,
   MapPin,
   LocateFixed,
   type LucideIcon,
@@ -65,8 +64,21 @@ const COVERAGE_OPTIONS: CoverageOption[] = [
   { id: "health", label: "Health & wellness", icon: HeartPulse },
   { id: "work", label: "My company & job", icon: Building2 },
   { id: "culture", label: "Music & culture", icon: Music },
-  { id: "other", label: "Other (custom)", icon: Sparkles },
 ];
+
+const DISABLED_COVERAGE: Partial<Record<string, string>> = {
+  emails_calendar: "Coming next beta",
+};
+
+const DEEP_DIVE_PROMPTS: Partial<Record<string, string>> = {
+  sports: "Which sports or teams?",
+  work: "Where do you work and what do you do?",
+};
+
+const DEEP_DIVE_PLACEHOLDERS: Partial<Record<string, string>> = {
+  sports: "e.g. 49ers, Warriors, Premier League",
+  work: "e.g. PM at a health-tech startup in SF",
+};
 
 interface StylePreset {
   id: string;
@@ -128,21 +140,6 @@ const STYLE_PRESETS: StylePreset[] = [
       "Wait — agent workloads specifically? That's wild. Let's actually break down what changed.",
     ],
   },
-  {
-    id: "commute",
-    length: 8,
-    style: "straightforward",
-    tone: "calm",
-    mode: "commute",
-    label: "Commute",
-    duration: "8 min",
-    desc: "Optimized for driving — clear segues, no whiplash.",
-    example: "Marketplace Morning Report",
-    sample: [
-      "On your route this morning: light traffic on the 101.",
-      "Three meetings ahead — the ten am is on the design team's onboarding flow.",
-    ],
-  },
 ];
 
 /** Convert a free-form interests blob into discrete chips. Splits on commas,
@@ -180,6 +177,7 @@ export default function Onboarding() {
     location_lng: null as number | null,
     coverage: [] as string[],
     coverage_other: "",
+    coverage_details: {} as Record<string, string>,
     style_preset_id: "morning",
     freeform_interests: "",
     delivery_time: "07:00",
@@ -196,8 +194,7 @@ export default function Onboarding() {
   );
 
   const coverageLabels = useMemo(
-    () =>
-      COVERAGE_OPTIONS.filter((o) => formData.coverage.includes(o.id) && o.id !== "other").map((o) => o.label),
+    () => COVERAGE_OPTIONS.filter((o) => formData.coverage.includes(o.id)).map((o) => o.label),
     [formData.coverage],
   );
 
@@ -304,11 +301,14 @@ export default function Onboarding() {
   }
 
   const coverageSummary = (): string | null => {
-    const parts = [
-      coverageLabels.length ? `Cover most: ${coverageLabels.join(", ")}` : null,
-      formData.coverage_other.trim() || null,
-    ].filter(Boolean) as string[];
-    return parts.length ? parts.join("\n") : null;
+    const labeled = COVERAGE_OPTIONS
+      .filter((o) => formData.coverage.includes(o.id))
+      .map((o) => {
+        const detail = (formData.coverage_details[o.id] ?? "").trim();
+        return detail ? `${o.label}: ${detail}` : o.label;
+      });
+    if (!labeled.length) return null;
+    return `Cover most: ${labeled.join(", ")}`;
   };
 
   // Persist the slice owned by the current step. Throws on failure.
@@ -354,7 +354,7 @@ export default function Onboarding() {
         await upsertInterests(user.id, {
           freeform_text: merged,
           selected_packages: existing?.selected_packages ?? [],
-          tags: Array.from(new Set(formData.coverage.filter((c) => c !== "other"))),
+          tags: Array.from(new Set(formData.coverage)),
         });
         return;
       }
@@ -443,8 +443,8 @@ export default function Onboarding() {
             : null
         }
         tags={[
-          ...COVERAGE_OPTIONS.filter((o) => formData.coverage.includes(o.id) && o.id !== "other").map(
-            (o) => o.label,
+          ...COVERAGE_OPTIONS.filter((o) => formData.coverage.includes(o.id)).map(
+            (o) => (formData.coverage_details[o.id] || o.label),
           ),
           ...extractChips(formData.freeform_interests),
         ]}
@@ -539,6 +539,7 @@ interface StepProps {
     location_lng: number | null;
     coverage: string[];
     coverage_other: string;
+    coverage_details: Record<string, string>;
     style_preset_id: string;
     freeform_interests: string;
     delivery_time: string;
@@ -644,8 +645,12 @@ function Step1({
   update,
 }: StepProps & { toggleCoverage: (id: string) => void }) {
   const selectedLabels = COVERAGE_OPTIONS.filter(
-    (o) => formData.coverage.includes(o.id) && o.id !== "other",
+    (o) => formData.coverage.includes(o.id),
   ).map((o) => o.label);
+
+  const deepDiveItems = COVERAGE_OPTIONS.filter(
+    (o) => formData.coverage.includes(o.id) && !!DEEP_DIVE_PROMPTS[o.id],
+  );
 
   return (
     <div className="space-y-4">
@@ -653,38 +658,68 @@ function Step1({
         {COVERAGE_OPTIONS.map((opt) => {
           const selected = formData.coverage.includes(opt.id);
           const Icon = opt.icon;
+          const disabledNote = DISABLED_COVERAGE[opt.id];
           return (
             <button
               key={opt.id}
               type="button"
-              onClick={() => toggleCoverage(opt.id)}
+              onClick={disabledNote ? undefined : () => toggleCoverage(opt.id)}
+              disabled={!!disabledNote}
               className={`flex items-start gap-2 p-3 rounded-xl border text-left transition-all ${
-                selected ? "border-foreground bg-secondary" : "border-border hover:border-muted-foreground/30"
+                disabledNote
+                  ? "border-border opacity-40 cursor-not-allowed"
+                  : selected
+                  ? "border-foreground bg-secondary"
+                  : "border-border hover:border-muted-foreground/30"
               }`}
             >
               <Icon
-                className={`h-4 w-4 shrink-0 mt-0.5 ${selected ? "text-foreground" : "text-muted-foreground"}`}
+                className={`h-4 w-4 shrink-0 mt-0.5 ${selected && !disabledNote ? "text-foreground" : "text-muted-foreground"}`}
                 strokeWidth={1.5}
               />
-              <span className="text-xs font-medium leading-snug">{opt.label}</span>
+              <span className="flex-1 min-w-0">
+                <span className="text-xs font-medium leading-snug block">{opt.label}</span>
+                {disabledNote && (
+                  <span className="text-[10px] text-muted-foreground italic">{disabledNote}</span>
+                )}
+              </span>
             </button>
           );
         })}
       </div>
 
-      {formData.coverage.includes("other") && (
-        <Textarea
-          value={formData.coverage_other}
-          onChange={(e) => update("coverage_other", e.target.value)}
-          placeholder="Tell us what else — e.g. 49ers scores, Foo Fighters news, PM job openings"
-          className="rounded-xl resize-none"
-          rows={3}
-        />
-      )}
+      {/* Deep-dive inputs for options that support them */}
+      <AnimatePresence>
+        {deepDiveItems.map((opt) => (
+          <motion.div
+            key={`detail-${opt.id}`}
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.25 }}
+            className="overflow-hidden"
+          >
+            <div className="pt-1">
+              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+                {DEEP_DIVE_PROMPTS[opt.id]}
+              </label>
+              <Textarea
+                value={formData.coverage_details[opt.id] ?? ""}
+                onChange={(e) =>
+                  update("coverage_details", { ...formData.coverage_details, [opt.id]: e.target.value })
+                }
+                placeholder={DEEP_DIVE_PLACEHOLDERS[opt.id] ?? ""}
+                className="rounded-xl resize-none text-sm"
+                rows={2}
+              />
+            </div>
+          </motion.div>
+        ))}
+      </AnimatePresence>
 
       {/* Live priority pill row */}
       <AnimatePresence>
-        {(selectedLabels.length > 0 || formData.coverage_other.trim()) && (
+        {selectedLabels.length > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
@@ -707,19 +742,6 @@ function Step1({
                   {label}
                 </motion.span>
               ))}
-              {formData.coverage_other.trim()
-                .split(/[,;\n]+/g)
-                .map((t) => t.trim())
-                .filter(Boolean)
-                .slice(0, 6)
-                .map((label) => (
-                  <span
-                    key={`other-${label}`}
-                    className="px-2 py-0.5 rounded-full bg-background text-xs font-medium border border-dashed border-border"
-                  >
-                    {label}
-                  </span>
-                ))}
             </div>
           </motion.div>
         )}
@@ -737,13 +759,6 @@ function Step1({
 function Step2({ formData, update }: StepProps) {
   const selectedPreset =
     STYLE_PRESETS.find((p) => p.id === formData.style_preset_id) ?? STYLE_PRESETS[1];
-  const [microFlash, setMicroFlash] = useState<number>(0);
-
-  // Each time the preset changes, briefly show the microline.
-  useEffect(() => {
-    setMicroFlash((n) => n + 1);
-  }, [formData.style_preset_id]);
-
   return (
     <div className="space-y-4">
       <div className="space-y-2">
@@ -807,12 +822,6 @@ function Step2({ formData, update }: StepProps) {
         </AnimatePresence>
       </div>
 
-      <ReactiveLine
-        key={microFlash}
-        input={selectedPreset.id}
-        format={() => "Got it — tailoring your briefing…"}
-        thinkingMs={500}
-      />
     </div>
   );
 }
