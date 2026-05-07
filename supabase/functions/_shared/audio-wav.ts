@@ -61,62 +61,136 @@ export function packWav(pcmChunks: Uint8Array[]): Uint8Array {
   return out;
 }
 
-/** Generate a short programmatic intro chime (raw PCM, no header).
- *  A warm major-7 arpeggio with a soft pad sustain. Designed to be brief
- *  and pleasant — ~3 seconds total. */
+/** Programmatic intro music for the briefing — 8.8 seconds, designed to
+ *  fade smoothly into the spoken hook that follows.
+ *
+ *  Structure:
+ *    - 0.0s – 1.6s : opening arpeggio (C maj7, four notes 0.4s apart) builds
+ *    - 1.6s – 4.0s : full-bed sustain, gentle pad + slow harmonic wash
+ *    - 4.0s – 6.6s : second arpeggio motif (an octave higher, lighter)
+ *    - 6.6s – 8.8s : long musical fade-out so the bed gracefully decays just
+ *                    before the spoken hook lands. The fade IS the music's
+ *                    "exit" — when the speech begins right after, it feels
+ *                    like the music has lifted under the voice. */
 export function generateIntroPcm(): Uint8Array {
-  const totalSeconds = 3.2;
+  const totalSeconds = 8.8;
   const totalSamples = Math.floor(SAMPLE_RATE * totalSeconds);
   const pcm = new Int16Array(totalSamples);
 
-  // C major 7: C4 E4 G4 B4. Frequencies (Hz):
-  const notes = [261.63, 329.63, 392.0, 493.88];
-  // Sustained pad notes (one octave down) for warmth
+  // First arpeggio (C maj7 lower octave): C4 E4 G4 B4
+  const arp1 = [261.63, 329.63, 392.0, 493.88];
+  // Second arpeggio (one octave up — adds lift): C5 E5 G5
+  const arp2 = [523.25, 659.26, 783.99];
+  // Sustained pad notes (sub-octave) for warmth across the whole intro
   const padNotes = [130.81, 164.81, 196.0];
+
+  // Fade-out tail length. The audio crossfades to silence over the last
+  // FADE_TAIL seconds, so the spoken hook lands cleanly right after.
+  const FADE_TAIL = 2.2;
 
   for (let i = 0; i < totalSamples; i++) {
     const t = i / SAMPLE_RATE;
 
-    // ADSR-lite envelope: quick fade-in, sustain, fade-out on tail.
-    const attack = 0.25;
-    const release = 0.8;
+    // Master envelope: gentle fade-in over the first 0.3s, sustain in the
+    // body, smooth fade-out over the last FADE_TAIL seconds.
+    const attack = 0.3;
     let env = 1;
     if (t < attack) env = t / attack;
-    if (t > totalSeconds - release) env = Math.max(0, (totalSeconds - t) / release);
+    if (t > totalSeconds - FADE_TAIL) {
+      // Use a cosine-shaped fade for a perceptually smooth roll-off
+      const tail = (t - (totalSeconds - FADE_TAIL)) / FADE_TAIL;
+      env = 0.5 * (1 + Math.cos(Math.PI * tail));
+    }
 
-    // Arpeggio: trigger each note 0.18s apart, each rings for 1.4s.
     let sample = 0;
-    for (let n = 0; n < notes.length; n++) {
-      const startT = n * 0.18;
+
+    // First arpeggio motif starting at t=0. Each note 0.4s apart, rings 2.0s.
+    for (let n = 0; n < arp1.length; n++) {
+      const startT = n * 0.4;
       const noteT = t - startT;
-      if (noteT > 0 && noteT < 1.4) {
-        const noteEnv = Math.exp(-noteT * 1.4);
-        const phase = 2 * Math.PI * notes[n] * noteT;
-        // Gentle sine + a touch of 2nd harmonic for warmth
-        sample += Math.sin(phase) * noteEnv * 0.22;
-        sample += Math.sin(phase * 2) * noteEnv * 0.05;
+      if (noteT > 0 && noteT < 2.0) {
+        const noteEnv = Math.exp(-noteT * 0.9);
+        const phase = 2 * Math.PI * arp1[n] * noteT;
+        sample += Math.sin(phase) * noteEnv * 0.20;
+        sample += Math.sin(phase * 2) * noteEnv * 0.045;
       }
     }
 
-    // Pad layer (sustained chord) that fades in after first note
-    const padStart = 0.15;
+    // Second arpeggio motif (octave up) starting at t=4.0s. A "lift" moment.
+    for (let n = 0; n < arp2.length; n++) {
+      const startT = 4.0 + n * 0.32;
+      const noteT = t - startT;
+      if (noteT > 0 && noteT < 1.6) {
+        const noteEnv = Math.exp(-noteT * 1.1);
+        const phase = 2 * Math.PI * arp2[n] * noteT;
+        sample += Math.sin(phase) * noteEnv * 0.12;
+        sample += Math.sin(phase * 2) * noteEnv * 0.025;
+      }
+    }
+
+    // Pad layer (sustained chord) — fades in over 1.2s, holds across the
+    // body, naturally lifted by master envelope's tail fade.
+    const padStart = 0.2;
     if (t > padStart) {
       const padEnv = Math.min(1, (t - padStart) / 1.2);
       for (const f of padNotes) {
-        sample += Math.sin(2 * Math.PI * f * t) * 0.04 * padEnv;
+        sample += Math.sin(2 * Math.PI * f * t) * 0.038 * padEnv;
       }
     }
 
-    // Gentle low-frequency "whoosh" sweep for movement
-    const sweep = Math.sin(2 * Math.PI * 0.6 * t) * 0.015;
+    // Gentle low-frequency "whoosh" sweep for movement across the whole bed
+    const sweep = Math.sin(2 * Math.PI * 0.45 * t) * 0.012;
     sample += sweep;
 
-    // Scale, clip, quantize
     const clipped = Math.max(-1, Math.min(1, sample * env));
     pcm[i] = Math.round(clipped * 30000);
   }
 
-  // Copy Int16Array -> little-endian Uint8Array bytes.
+  const bytes = new Uint8Array(pcm.byteLength);
+  const view = new DataView(bytes.buffer);
+  for (let i = 0; i < pcm.length; i++) view.setInt16(i * 2, pcm[i], true);
+  return bytes;
+}
+
+/** Subtle "whoosh" between two consecutive news stories within the same
+ *  section. Much shorter and lighter than `generateSectionTransitionPcm`
+ *  — this is sound design, not a music sting.
+ *
+ *  ~0.55s sweep using filtered noise + a brief low-freq airy tone. Triggered
+ *  by the LLM emitting a [story_break] marker between stories. Falls under
+ *  the same overall section, so section_offsets are not affected. */
+export function generateStoryTransitionPcm(): Uint8Array {
+  const totalSeconds = 0.55;
+  const totalSamples = Math.floor(SAMPLE_RATE * totalSeconds);
+  const pcm = new Int16Array(totalSamples);
+
+  // Pseudo-random "noise" via a simple LCG seeded with 0 — deterministic so
+  // every story break sounds the same (a recognizable cue).
+  let lcg = 1;
+  const rand = () => { lcg = (lcg * 1103515245 + 12345) & 0x7fffffff; return (lcg / 0x7fffffff) * 2 - 1; };
+
+  // Single-pole low-pass IIR for the noise (so it sounds like air, not buzz)
+  let lp = 0;
+  const lpAlpha = 0.05;
+
+  for (let i = 0; i < totalSamples; i++) {
+    const t = i / SAMPLE_RATE;
+    // Bell-shaped envelope that swells and falls
+    const env = Math.sin(Math.PI * (t / totalSeconds));
+
+    // Filtered noise bed
+    const noise = rand();
+    lp = lp + lpAlpha * (noise - lp);
+
+    // Slow airy tone underneath (sweeps from ~80Hz to ~140Hz then back)
+    const sweepHz = 80 + 60 * Math.sin(Math.PI * (t / totalSeconds));
+    const tone = Math.sin(2 * Math.PI * sweepHz * t);
+
+    const sample = (lp * 0.18 + tone * 0.06) * env;
+    const clipped = Math.max(-1, Math.min(1, sample));
+    pcm[i] = Math.round(clipped * 22000);
+  }
+
   const bytes = new Uint8Array(pcm.byteLength);
   const view = new DataView(bytes.buffer);
   for (let i = 0; i < pcm.length; i++) view.setInt16(i * 2, pcm[i], true);

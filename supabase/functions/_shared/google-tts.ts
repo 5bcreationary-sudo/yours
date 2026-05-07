@@ -4,7 +4,7 @@
 // before sending to Google TTS. This makes the voices sound more natural
 // and expressive — pauses, emphasis, pace changes.
 //
-// Default voices: en-US-Studio-O (male, Host A), en-US-Studio-Q (female, Host B).
+// Default voices: en-US-Chirp3-HD-Charon (male, Host A), en-US-Chirp3-HD-Achernar (female, Host B).
 // Override with GOOGLE_TTS_VOICE_A / GOOGLE_TTS_VOICE_B env vars.
 //
 // Auth: prefers GCP service account (same secrets as Vertex AI) for TTS,
@@ -85,8 +85,10 @@ function textToSsml(text: string): string {
   // beat, same as the existing [laugh] alias.
   ssml = ssml.replace(/\[sigh\]/gi, '<break time="300ms"/>');
   ssml = ssml.replace(/\[laughing\]/gi, '<break time="350ms"/>');
+  ssml = ssml.replace(/\[slight\s+laugh\]/gi, '<break time="200ms"/>');
   ssml = ssml.replace(/\[laugh\]/gi, '<break time="250ms"/>');
   ssml = ssml.replace(/\[hmm\]/gi, '<break time="400ms"/>');
+  ssml = ssml.replace(/\[thinking\]/gi, '<break time="450ms"/>');
 
   // Strip any remaining unknown markers [whatever] or [two words] — relaxed
   // regex so multi-word tags we don't recognize are still removed cleanly.
@@ -100,7 +102,7 @@ function textToSsml(text: string): string {
 // detection is enough — if hasMarkers returns false but text still has a
 // stray "[long breath]", textToSsml's strip pass will scrub it before send.
 function hasMarkers(text: string): boolean {
-  return /\[\/?(?:pause|enthusiastic|excited|calm|thoughtful|warm|surprised|confused|serious|amused|softer|louder|fast|slow|emphasis|sigh|laugh|laughing|hmm|long\s+breath)(?::\w+)?\]/i.test(text) ||
+  return /\[\/?(?:pause|enthusiastic|excited|calm|thoughtful|warm|surprised|confused|serious|amused|softer|louder|fast|slow|emphasis|sigh|laugh|laughing|slight\s+laugh|hmm|thinking|long\s+breath)(?::\w+)?\]/i.test(text) ||
     /<break\b/i.test(text);
 }
 
@@ -118,7 +120,7 @@ export async function synthesizeGoogleTts(
   }
   if (!accessToken && !apiKey) return { buf: null, err: "Neither GCP service account nor GOOGLE_TTS_API_KEY set" };
 
-  voiceName = voiceName ?? Deno.env.get("GOOGLE_TTS_VOICE") ?? "en-US-Journey-D";
+  voiceName = voiceName ?? Deno.env.get("GOOGLE_TTS_VOICE") ?? "en-US-Chirp3-HD-Charon";
   const languageCode = voiceName.split("-").slice(0, 2).join("-");
   // Journey voices sound most natural at 0.95x; Chirp3-HD at 1.0x.
   const defaultRate = voiceName.includes("Journey") ? "0.95" : "1.0";

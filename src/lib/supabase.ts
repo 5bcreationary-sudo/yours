@@ -8,6 +8,8 @@ import type {
   BriefingListItem,
   BriefingSection,
   BriefingWithSections,
+  CalendarEvent,
+  GmailHighlight,
   UserInterest,
   UserProfile,
   UserSource,
@@ -141,7 +143,7 @@ export async function listRecentBriefings(userId: string, limit = 10): Promise<B
 
 export async function listRecentBriefingsWithCounts(
   userId: string,
-  limit = 10,
+  limit = 60,
 ): Promise<BriefingListItem[]> {
   const { data, error } = await supabase
     .from("briefings")
@@ -260,6 +262,74 @@ export async function triggerBriefing(opts?: {
   const body = await res.json();
   if (!res.ok || !body.ok) throw new Error(body.error ?? `trigger failed (${res.status})`);
   return { briefing_id: body.briefing_id };
+}
+
+/**
+ * Mint a public share URL for one of the current user's briefings.
+ * The URL points to /listen/:id?t=<jwt>, a sign-up gate. Visitors
+ * must create an account before the player loads.
+ *
+ * Pass `opts.sectionIndex` to share a specific section — the returned URL
+ * carries `&s=<index>`, which the Player reads to seek into that section.
+ * The JWT itself does NOT encode the section; it's a UI hint only.
+ */
+export async function shareBriefing(
+  briefingId: string,
+  opts?: { sectionIndex?: number },
+): Promise<{ url: string; expires_at: string }> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new Error("Not signed in");
+
+  const body: Record<string, unknown> = { briefing_id: briefingId };
+  if (typeof opts?.sectionIndex === "number" && Number.isFinite(opts.sectionIndex)) {
+    body.section_index = opts.sectionIndex;
+  }
+
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/share-briefing`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session.access_token}`,
+      apikey: SUPABASE_ANON_KEY,
+    },
+    body: JSON.stringify(body),
+  });
+
+  const respBody = await res.json();
+  if (!res.ok || !respBody.ok) throw new Error(respBody.error ?? `share failed (${res.status})`);
+  return { url: respBody.url, expires_at: respBody.expires_at };
+}
+
+// ---------- Google integrations ----------
+
+export async function fetchGmailHighlights(): Promise<{ items: GmailHighlight[]; fetched_at: string }> {
+  const accessToken = getStoredAccessToken();
+  if (!accessToken) throw new Error("Not signed in");
+
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/gmail-summary`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      apikey: SUPABASE_ANON_KEY,
+    },
+  });
+  const body = await res.json();
+  if (!res.ok || !body.ok) throw new Error(body.error ?? `gmail-summary failed (${res.status})`);
+  return { items: body.items ?? [], fetched_at: body.fetched_at };
+}
+
+export async function fetchCalendarToday(): Promise<{ events: CalendarEvent[]; fetched_at: string }> {
+  const accessToken = getStoredAccessToken();
+  if (!accessToken) throw new Error("Not signed in");
+
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/calendar-today`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      apikey: SUPABASE_ANON_KEY,
+    },
+  });
+  const body = await res.json();
+  if (!res.ok || !body.ok) throw new Error(body.error ?? `calendar-today failed (${res.status})`);
+  return { events: body.events ?? [], fetched_at: body.fetched_at };
 }
 
 /**

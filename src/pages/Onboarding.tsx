@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
@@ -9,10 +9,6 @@ import {
   ArrowRight,
   ArrowLeft,
   Check,
-  Sun,
-  Briefcase,
-  Moon,
-  Car,
   Mail,
   Newspaper,
   Trophy,
@@ -21,19 +17,16 @@ import {
   Building2,
   Music,
   Sparkles,
-  Zap,
-  Waves,
-  Rss,
-  MessageSquare,
-  ListChecks,
   MapPin,
   LocateFixed,
   type LucideIcon,
 } from "lucide-react";
-import { RSS_PRESETS } from "@/types/database";
-import type { UserInterest } from "@/types/database";
+import type { UserInterest, UserProfile } from "@/types/database";
 import { toast } from "sonner";
-import { addRssSource, getInterests, upsertInterests } from "@/lib/supabase";
+import { addRssSource, getInterests, triggerBriefing, upsertInterests } from "@/lib/supabase";
+import { useWeatherPreview } from "@/hooks/useWeatherPreview";
+import { ReactiveLine } from "@/components/onboarding/ReactiveLine";
+import { GenerationFlow } from "@/components/onboarding/GenerationFlow";
 
 function normalizePhone(raw: string): string | null {
   const trimmed = raw.trim();
@@ -55,76 +48,123 @@ function formatTime12h(hhmm: string): string {
 }
 
 const STEPS = [
-  { title: "About you", subtitle: "Let's personalize your briefing" },
-  { title: "Briefing style", subtitle: "How should your briefing feel?" },
-  { title: "Wake-up time", subtitle: "When do you want your briefing?" },
-  { title: "Interests", subtitle: "What matters to you?" },
-  { title: "News sources", subtitle: "Pick your preferred sources" },
-  { title: "Evening mode", subtitle: "Optional: wind-down briefing" },
-];
-
-type Tone = {
-  id: "upbeat" | "calm" | "professional";
-  label: string;
-  icon: LucideIcon;
-  desc: string;
-};
-
-const TONES: Tone[] = [
-  {
-    id: "upbeat",
-    label: "Upbeat",
-    icon: Zap,
-    desc: "Warm, energetic delivery with a motivating lift. Each section opens with momentum — the kind of voice that makes you reach for your coffee faster.",
-  },
-  {
-    id: "calm",
-    label: "Calm",
-    icon: Waves,
-    desc: "Measured, grounded pace like a thoughtful podcast host. Softer phrasing, longer beats between ideas. Good if you listen while stretching or winding up.",
-  },
-  {
-    id: "professional",
-    label: "Professional",
-    icon: Briefcase,
-    desc: "Direct, efficient, facts-first. Feels like a daily executive brief — no filler, no flourish. Every sentence earns its place.",
-  },
-];
-
-const MODES = [
-  { id: "morning", label: "Morning Routine", desc: "Full briefing while getting ready", icon: Sun },
-  { id: "commute", label: "Commute Mode", desc: "Optimized for driving/transit", icon: Car },
-  { id: "executive", label: "Executive Brief", desc: "Just the essentials, fast", icon: Briefcase },
-];
-
-const LENGTHS = [
-  { min: 3, label: "3 min", desc: "Quick headlines" },
-  { min: 8, label: "8 min", desc: "Full briefing" },
-  { min: 12, label: "12 min", desc: "Deep dive" },
+  { title: "Tell us about you", subtitle: "This helps us give you accurate weather and local updates." },
+  { title: "What should we cover most?", subtitle: "Don't worry — we'll refine this later." },
+  { title: "Pick your style", subtitle: "Each preset shapes voice, length, and tone." },
+  { title: "Anything else we should know?", subtitle: "Brain dump anything — the more we know, the more personalized your briefings get." },
+  { title: "When should we have it ready?", subtitle: "We'll text you the moment your briefing is ready." },
 ];
 
 type CoverageOption = { id: string; label: string; icon: LucideIcon };
 
 const COVERAGE_OPTIONS: CoverageOption[] = [
   { id: "emails_calendar", label: "My emails & calendar", icon: Mail },
-  { id: "news", label: "Latest news (CNN, Fox, NPR, etc.)", icon: Newspaper },
-  { id: "sports", label: "Sports & my favorite teams", icon: Trophy },
+  { id: "news", label: "Latest news", icon: Newspaper },
+  { id: "sports", label: "Sports & teams", icon: Trophy },
   { id: "tech", label: "AI, tech & startups", icon: Cpu },
-  { id: "health", label: "Health, fitness & wellness", icon: HeartPulse },
-  { id: "work", label: "My company & job updates", icon: Building2 },
-  { id: "culture", label: "Entertainment, music & culture", icon: Music },
-  { id: "other", label: "Other (custom topics)", icon: Sparkles },
+  { id: "health", label: "Health & wellness", icon: HeartPulse },
+  { id: "work", label: "My company & job", icon: Building2 },
+  { id: "culture", label: "Music & culture", icon: Music },
+  { id: "other", label: "Other (custom)", icon: Sparkles },
 ];
 
-const COVERAGE_PLACEHOLDER = `e.g. I follow AI startups — Anthropic, OpenAI, Mistral, Groq. I want funding rounds, product launches, and technical research papers summarized.
+interface StylePreset {
+  id: string;
+  length: 3 | 8 | 12;
+  style: UserProfile["briefing_style"];
+  tone: UserProfile["tone"];
+  mode: UserProfile["briefing_mode"];
+  label: string;
+  duration: string;
+  desc: string;
+  example: string;
+  /** Sample dialogue surfaced in the live preview when this preset is selected. */
+  sample: string[];
+}
 
-I'm a 49ers fan. Scores, injury reports, trade rumors, upcoming games.
+const STYLE_PRESETS: StylePreset[] = [
+  {
+    id: "quick",
+    length: 3,
+    style: "straightforward",
+    tone: "professional",
+    mode: "executive",
+    label: "Quick brief",
+    duration: "3 min",
+    desc: "Headlines only — facts, no filler.",
+    example: "Bloomberg-style executive update",
+    sample: [
+      "Markets opened up half a percent. Apple beats on iPhone. Fed holds.",
+      "Three meetings today. First at ten. That's your morning.",
+    ],
+  },
+  {
+    id: "morning",
+    length: 8,
+    style: "conversational",
+    tone: "upbeat",
+    mode: "morning",
+    label: "Morning show",
+    duration: "8 min",
+    desc: "Two hosts walk you through the day, with light banter.",
+    example: "NPR Up First with energy",
+    sample: [
+      "It's seventy-two and sunny — perfect for that one-pm meeting.",
+      "Speaking of meetings — three on your plate today, first at ten.",
+    ],
+  },
+  {
+    id: "discussion",
+    length: 12,
+    style: "conversational",
+    tone: "calm",
+    mode: "morning",
+    label: "Long discussion",
+    duration: "12 min",
+    desc: "Hosts dig into stories, ask questions, follow threads.",
+    example: "Joe Rogan-style discussion",
+    sample: [
+      "So OpenAI dropped this turbo variant overnight.",
+      "Wait — agent workloads specifically? That's wild. Let's actually break down what changed.",
+    ],
+  },
+  {
+    id: "commute",
+    length: 8,
+    style: "straightforward",
+    tone: "calm",
+    mode: "commute",
+    label: "Commute",
+    duration: "8 min",
+    desc: "Optimized for driving — clear segues, no whiplash.",
+    example: "Marketplace Morning Report",
+    sample: [
+      "On your route this morning: light traffic on the 101.",
+      "Three meetings ahead — the ten am is on the design team's onboarding flow.",
+    ],
+  },
+];
 
-I like alt-rock — Foo Fighters, Arctic Monkeys, The Strokes. Tour dates, new releases, band news.
-
-I'm a product manager in San Francisco looking for senior PM roles at Series B+ startups. Notable job postings and hiring trends.
-
-Morning weather and any traffic on the 101 toward Palo Alto.`;
+/** Convert a free-form interests blob into discrete chips. Splits on commas,
+ *  newlines, and sentence-ending punctuation; trims, drops empties, dedupes
+ *  case-insensitively, caps at 12. Pure function so it's unit-testable. */
+export function extractChips(text: string): string[] {
+  if (!text) return [];
+  const parts = text
+    .split(/[,;\n.!?]+/g)
+    .map((p) => p.trim())
+    .filter((p) => p.length >= 2 && p.length <= 60);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const p of parts) {
+    const key = p.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(p);
+    if (out.length >= 12) break;
+  }
+  return out;
+}
 
 export default function Onboarding() {
   const navigate = useNavigate();
@@ -140,21 +180,28 @@ export default function Onboarding() {
     location_lng: null as number | null,
     coverage: [] as string[],
     coverage_other: "",
-    tone: "upbeat",
-    briefing_mode: "morning",
-    briefing_style: "conversational" as "straightforward" | "conversational",
-    preferred_length_minutes: 8,
-    delivery_time: "07:00",
+    style_preset_id: "morning",
     freeform_interests: "",
-    selected_rss: [] as string[],
-    custom_rss: "",
-    evening_preference: false,
+    delivery_time: "07:00",
   });
   const [geoLoading, setGeoLoading] = useState(false);
+  const [generating, setGenerating] = useState<string | null>(null); // briefing id once triggered
 
-  const update = (key: string, value: unknown) => setFormData(prev => ({ ...prev, [key]: value }));
+  const update = (key: keyof typeof formData, value: unknown) =>
+    setFormData((prev) => ({ ...prev, [key]: value }));
 
-  // Reverse-geocode lat/lng to city name using free Nominatim API.
+  const selectedPreset = useMemo(
+    () => STYLE_PRESETS.find((p) => p.id === formData.style_preset_id) ?? STYLE_PRESETS[1],
+    [formData.style_preset_id],
+  );
+
+  const coverageLabels = useMemo(
+    () =>
+      COVERAGE_OPTIONS.filter((o) => formData.coverage.includes(o.id) && o.id !== "other").map((o) => o.label),
+    [formData.coverage],
+  );
+
+  // ---------- geocoding ----------
   const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 5000);
@@ -174,8 +221,9 @@ export default function Onboarding() {
     }
   };
 
-  // Forward-geocode a city name to lat/lng.
-  const forwardGeocode = async (query: string): Promise<{ lat: number; lng: number; city: string } | null> => {
+  const forwardGeocode = async (
+    query: string,
+  ): Promise<{ lat: number; lng: number; city: string } | null> => {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 5000);
     try {
@@ -186,7 +234,11 @@ export default function Onboarding() {
       if (!res.ok) return null;
       const results = await res.json();
       if (!results.length) return null;
-      return { lat: parseFloat(results[0].lat), lng: parseFloat(results[0].lon), city: results[0].display_name.split(",")[0] };
+      return {
+        lat: parseFloat(results[0].lat),
+        lng: parseFloat(results[0].lon),
+        city: results[0].display_name.split(",")[0],
+      };
     } catch {
       return null;
     } finally {
@@ -206,7 +258,7 @@ export default function Onboarding() {
       );
       const { latitude, longitude } = pos.coords;
       const city = await reverseGeocode(latitude, longitude);
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
         location_lat: latitude,
         location_lng: longitude,
@@ -220,20 +272,9 @@ export default function Onboarding() {
   };
 
   const toggleCoverage = (id: string) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
-      coverage: prev.coverage.includes(id)
-        ? prev.coverage.filter(c => c !== id)
-        : [...prev.coverage, id],
-    }));
-  };
-
-  const toggleRSS = (id: string) => {
-    setFormData(prev => ({
-      ...prev,
-      selected_rss: prev.selected_rss.includes(id)
-        ? prev.selected_rss.filter(r => r !== id)
-        : [...prev.selected_rss, id],
+      coverage: prev.coverage.includes(id) ? prev.coverage.filter((c) => c !== id) : [...prev.coverage, id],
     }));
   };
 
@@ -243,7 +284,7 @@ export default function Onboarding() {
     try {
       el.showPicker?.();
     } catch {
-      // no-op: showPicker can throw if not user-gesture in some browsers
+      /* no-op */
     }
     el.focus();
     el.click();
@@ -263,70 +304,66 @@ export default function Onboarding() {
   }
 
   const coverageSummary = (): string | null => {
-    const labels = COVERAGE_OPTIONS
-      .filter(o => formData.coverage.includes(o.id) && o.id !== "other")
-      .map(o => o.label);
     const parts = [
-      labels.length ? `Cover most: ${labels.join(", ")}` : null,
+      coverageLabels.length ? `Cover most: ${coverageLabels.join(", ")}` : null,
       formData.coverage_other.trim() || null,
-    ].filter(Boolean);
+    ].filter(Boolean) as string[];
     return parts.length ? parts.join("\n") : null;
   };
 
-  // Persist the slice owned by the current step. Throws on failure; caller advances only on resolve.
+  // Persist the slice owned by the current step. Throws on failure.
   const saveCurrentStep = async () => {
     if (!user) throw new Error("You must be signed in to continue.");
     switch (step) {
       case 0: {
-        // If user typed a city but didn't use geolocation, forward-geocode it.
         let homeAddress: { lat: number; lng: number; city: string } | null = null;
         if (formData.location_lat != null && formData.location_lng != null) {
-          homeAddress = { lat: formData.location_lat, lng: formData.location_lng, city: formData.location_city };
+          homeAddress = {
+            lat: formData.location_lat,
+            lng: formData.location_lng,
+            city: formData.location_city,
+          };
         } else if (formData.location_city.trim()) {
           const geo = await forwardGeocode(formData.location_city.trim());
           if (geo) {
             homeAddress = geo;
-            setFormData(prev => ({ ...prev, location_lat: geo.lat, location_lng: geo.lng, location_city: geo.city }));
+            setFormData((prev) => ({
+              ...prev,
+              location_lat: geo.lat,
+              location_lng: geo.lng,
+              location_city: geo.city,
+            }));
           }
         }
-        // Run profile update and interests fetch in parallel — they're independent.
-        const [, existing] = await Promise.all([
-          updateProfile({
-            full_name: formData.full_name || null,
-            phone_e164: normalizePhone(formData.phone),
-            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            ...(homeAddress ? { home_address: homeAddress } : {}),
-          }),
-          getInterests(user.id),
-        ]);
+        await updateProfile({
+          full_name: formData.full_name || null,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          ...(homeAddress ? { home_address: homeAddress } : {}),
+        });
+        return;
+      }
+      case 1: {
         const summary = coverageSummary();
+        const existing = await getInterests(user.id);
         const existingFree = existing?.freeform_text ?? "";
-        // Replace any prior "Cover most: …" line; preserve step-3 prose if present.
         const withoutCoverLine = existingFree
           .split("\n\n")
-          .filter(p => !p.startsWith("Cover most:") && p.trim() !== (formData.coverage_other.trim()))
+          .filter((p) => !p.startsWith("Cover most:") && p.trim() !== formData.coverage_other.trim())
           .join("\n\n");
         const merged = [summary, withoutCoverLine].filter(Boolean).join("\n\n") || null;
         await upsertInterests(user.id, {
           freeform_text: merged,
           selected_packages: existing?.selected_packages ?? [],
-          tags: Array.from(new Set(formData.coverage.filter(c => c !== "other"))),
-        });
-        return;
-      }
-      case 1: {
-        await updateProfile({
-          tone: formData.tone as Tone["id"],
-          briefing_mode: formData.briefing_mode as "morning" | "commute" | "executive",
-          briefing_style: formData.briefing_style,
-          preferred_length_minutes: formData.preferred_length_minutes,
+          tags: Array.from(new Set(formData.coverage.filter((c) => c !== "other"))),
         });
         return;
       }
       case 2: {
         await updateProfile({
-          delivery_time: formData.delivery_time,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          tone: selectedPreset.tone,
+          briefing_mode: selectedPreset.mode,
+          briefing_style: selectedPreset.style,
+          preferred_length_minutes: selectedPreset.length,
         });
         return;
       }
@@ -338,24 +375,10 @@ export default function Onboarding() {
         return;
       }
       case 4: {
-        const rssToAdd = RSS_PRESETS
-          .filter(r => formData.selected_rss.includes(r.id))
-          .map(r => ({ url: r.url, name: r.name, preset_id: r.id }));
-        const custom = formData.custom_rss.trim();
-        if (custom) {
-          try {
-            new URL(custom);
-            rssToAdd.push({ url: custom, name: new URL(custom).hostname, preset_id: "custom" });
-          } catch {
-            toast.warning("Custom RSS URL was skipped (not a valid URL).");
-          }
-        }
-        await Promise.all(rssToAdd.map(r => addRssSource(user.id, r)));
-        return;
-      }
-      case 5: {
         await updateProfile({
-          evening_preference: formData.evening_preference,
+          phone_e164: normalizePhone(formData.phone),
+          delivery_time: formData.delivery_time,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           onboarding_complete: true,
         });
         return;
@@ -374,8 +397,24 @@ export default function Onboarding() {
       if (step < STEPS.length - 1) {
         setStep(step + 1);
       } else {
-        toast.success("You're all set!");
-        navigate("/app");
+        // Final step: trigger first briefing and switch into the generation flow.
+        try {
+          const location =
+            formData.location_lat != null && formData.location_lng != null
+              ? {
+                  lat: formData.location_lat,
+                  lng: formData.location_lng,
+                  city: formData.location_city || "",
+                }
+              : undefined;
+          const { briefing_id } = await triggerBriefing(location ? { location } : undefined);
+          setGenerating(briefing_id);
+        } catch (err) {
+          console.error("[onboarding] triggerBriefing failed", err);
+          // Even if trigger fails, the user is fully onboarded — drop them on /app.
+          toast.success("You're all set!");
+          navigate("/app");
+        }
       }
     } catch (err) {
       console.error("[onboarding] save failed", err);
@@ -393,263 +432,511 @@ export default function Onboarding() {
 
   const progress = ((step + 1) / STEPS.length) * 100;
 
+  // While generating, render the full-screen GenerationFlow.
+  if (generating) {
+    return (
+      <GenerationFlow
+        briefingId={generating}
+        location={
+          formData.location_lat != null && formData.location_lng != null
+            ? { lat: formData.location_lat, lng: formData.location_lng, city: formData.location_city }
+            : null
+        }
+        tags={[
+          ...COVERAGE_OPTIONS.filter((o) => formData.coverage.includes(o.id) && o.id !== "other").map(
+            (o) => o.label,
+          ),
+          ...extractChips(formData.freeform_interests),
+        ]}
+        onReady={(briefingId) => {
+          navigate(`/b/${briefingId}`, { state: { autoplay: true } });
+        }}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <div className="h-1 bg-secondary">
-        <motion.div className="h-full bg-foreground" animate={{ width: `${progress}%` }} transition={{ duration: 0.3 }} />
-      </div>
-
-      <div className="flex-1 flex items-center justify-center px-6 py-12">
-        <div className="w-full max-w-md">
-          <div className="flex items-center justify-between mb-8">
-            <button onClick={() => step > 0 && setStep(step - 1)} className={`text-sm text-muted-foreground hover:text-foreground transition-colors ${step === 0 ? "invisible" : ""}`}>
+      {/* Top progress + step counter */}
+      <div className="sticky top-0 z-10 bg-background pt-3 pb-2 px-6">
+        <div className="max-w-md mx-auto">
+          <div className="flex items-center justify-between mb-1.5">
+            <button
+              onClick={() => step > 0 && setStep(step - 1)}
+              className={`text-sm text-muted-foreground hover:text-foreground transition-colors ${step === 0 ? "invisible" : ""}`}
+              aria-label="Back"
+            >
               <ArrowLeft className="h-4 w-4" />
             </button>
-            <span className="text-xs text-muted-foreground">{step + 1} of {STEPS.length}</span>
-            <button onClick={skip} className="text-sm text-muted-foreground hover:text-foreground transition-colors">Skip</button>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              Step {step + 1} of {STEPS.length}
+            </span>
+            <button
+              onClick={skip}
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Skip
+            </button>
           </div>
+          <div className="h-1 bg-secondary rounded-full overflow-hidden">
+            <motion.div
+              className="h-full bg-foreground rounded-full"
+              animate={{ width: `${progress}%` }}
+              transition={{ duration: 0.4, ease: "easeOut" }}
+            />
+          </div>
+        </div>
+      </div>
 
+      <div className="flex-1 flex items-start justify-center px-6 py-10">
+        <div className="w-full max-w-md">
           <AnimatePresence mode="wait">
-            <motion.div key={step} initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.25 }}>
+            <motion.div
+              key={step}
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.25 }}
+            >
               <h2 className="text-xl font-bold tracking-tight mb-1">{STEPS[step].title}</h2>
               <p className="text-sm text-muted-foreground mb-6">{STEPS[step].subtitle}</p>
 
-              {step === 0 && (
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-sm font-medium mb-1.5 block">What should we call you?</label>
-                    <Input value={formData.full_name} onChange={e => update("full_name", e.target.value)} placeholder="Your name" className="h-11 rounded-xl" />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium mb-1.5 block">Mobile number</label>
-                    <Input type="tel" inputMode="tel" autoComplete="tel" value={formData.phone} onChange={e => update("phone", e.target.value)} placeholder="+1 555 123 4567" className="h-11 rounded-xl" />
-                    <p className="text-xs text-muted-foreground mt-1.5">We'll text you a link each morning when your briefing is ready.</p>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium mb-1.5 block">Your location</label>
-                    <div className="flex gap-2">
-                      <Input
-                        value={formData.location_city}
-                        onChange={e => {
-                          update("location_city", e.target.value);
-                          update("location_lat", null);
-                          update("location_lng", null);
-                        }}
-                        placeholder="City or zip code"
-                        className="h-11 rounded-xl flex-1"
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        className="h-11 w-11 rounded-xl shrink-0"
-                        onClick={useMyLocation}
-                        disabled={geoLoading}
-                        title="Use my location"
-                      >
-                        {geoLoading ? (
-                          <LocateFixed className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <MapPin className="h-4 w-4" />
-                        )}
-                      </Button>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1.5">For accurate weather in your briefing.</p>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium mb-1 block">What do you want your daily briefing to cover most?</label>
-                    <p className="text-xs text-muted-foreground mb-3">We'll use this to make every morning briefing feel personal.</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      {COVERAGE_OPTIONS.map(opt => {
-                        const selected = formData.coverage.includes(opt.id);
-                        const Icon = opt.icon;
-                        return (
-                          <button
-                            key={opt.id}
-                            type="button"
-                            onClick={() => toggleCoverage(opt.id)}
-                            className={`flex items-start gap-2 p-3 rounded-xl border text-left transition-all ${selected ? "border-foreground bg-secondary" : "border-border hover:border-muted-foreground/30"}`}
-                          >
-                            <Icon className={`h-4 w-4 shrink-0 mt-0.5 ${selected ? "text-foreground" : "text-muted-foreground"}`} strokeWidth={1.5} />
-                            <span className="text-xs font-medium leading-snug">{opt.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {formData.coverage.includes("other") && (
-                      <Textarea
-                        value={formData.coverage_other}
-                        onChange={e => update("coverage_other", e.target.value)}
-                        placeholder="Tell us what else — e.g. 49ers scores, Foo Fighters news, PM job openings"
-                        className="mt-3 rounded-xl resize-none"
-                        rows={3}
-                      />
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {step === 1 && (
-                <div className="space-y-6">
-                  <div>
-                    <label className="text-sm font-medium mb-3 block">Briefing style</label>
-                    <div className="space-y-2">
-                      {([
-                        { id: "straightforward" as const, label: "Straightforward", icon: ListChecks, desc: "Just the facts. Two hosts walk you through the day — clear, concise, no fluff." },
-                        { id: "conversational" as const, label: "Conversational", icon: MessageSquare, desc: "Two hosts with personality. Natural reactions, follow-up questions, and genuine back-and-forth — like a real podcast." },
-                      ]).map(s => (
-                        <button key={s.id} onClick={() => update("briefing_style", s.id)} className={`w-full flex items-start gap-3 p-3.5 rounded-xl border transition-all text-left ${formData.briefing_style === s.id ? "border-foreground bg-secondary" : "border-border hover:border-muted-foreground/30"}`}>
-                          <s.icon className="h-5 w-5 shrink-0 mt-0.5" strokeWidth={1.5} />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium">{s.label}</p>
-                            <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">{s.desc}</p>
-                          </div>
-                          {formData.briefing_style === s.id && <Check className="h-4 w-4 shrink-0 mt-0.5" />}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium mb-3 block">Briefing mode</label>
-                    <div className="space-y-2">
-                      {MODES.map(m => (
-                        <button key={m.id} onClick={() => update("briefing_mode", m.id)} className={`w-full flex items-center gap-3 p-3.5 rounded-xl border transition-all text-left ${formData.briefing_mode === m.id ? "border-foreground bg-secondary" : "border-border hover:border-muted-foreground/30"}`}>
-                          <m.icon className="h-5 w-5 shrink-0" strokeWidth={1.5} />
-                          <div><p className="text-sm font-medium">{m.label}</p><p className="text-xs text-muted-foreground">{m.desc}</p></div>
-                          {formData.briefing_mode === m.id && <Check className="h-4 w-4 ml-auto shrink-0" />}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium mb-3 block">Tone</label>
-                    <div className="space-y-2">
-                      {TONES.map(t => {
-                        const Icon = t.icon;
-                        const selected = formData.tone === t.id;
-                        return (
-                          <button
-                            key={t.id}
-                            onClick={() => update("tone", t.id)}
-                            className={`w-full flex items-start gap-3 p-3.5 rounded-xl border transition-all text-left ${selected ? "border-foreground bg-secondary" : "border-border hover:border-muted-foreground/30"}`}
-                          >
-                            <Icon className="h-5 w-5 shrink-0 mt-0.5" strokeWidth={1.5} />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium">{t.label}</p>
-                              <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">{t.desc}</p>
-                            </div>
-                            {selected && <Check className="h-4 w-4 shrink-0 mt-0.5" />}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium mb-3 block">Length</label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {LENGTHS.map(l => (
-                        <button key={l.min} onClick={() => update("preferred_length_minutes", l.min)} className={`p-3 rounded-xl border text-center transition-all ${formData.preferred_length_minutes === l.min ? "border-foreground bg-secondary" : "border-border hover:border-muted-foreground/30"}`}>
-                          <p className="text-sm font-semibold">{l.label}</p>
-                          <p className="text-xs text-muted-foreground">{l.desc}</p>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {step === 2 && (
-                <div className="space-y-4">
-                  <button
-                    type="button"
-                    onClick={openTimePicker}
-                    className="w-full py-8 px-8 rounded-2xl bg-secondary hover:bg-secondary/80 transition-colors flex flex-col items-center justify-center"
-                  >
-                    <span className="text-5xl font-bold tracking-tight tabular-nums">
-                      {formatTime12h(formData.delivery_time)}
-                    </span>
-                    <span className="text-xs text-muted-foreground mt-2">Tap to change</span>
-                  </button>
-                  <input
-                    ref={timeInputRef}
-                    type="time"
-                    value={formData.delivery_time}
-                    onChange={e => update("delivery_time", e.target.value || "07:00")}
-                    className="sr-only"
-                    aria-label="Delivery time"
-                  />
-                  <p className="text-xs text-muted-foreground text-center">
-                    We'll have your briefing ready by this time every morning.
-                  </p>
-                  <div className="mt-6 p-4 rounded-xl bg-secondary">
-                    <p className="text-sm font-medium mb-1">Detected timezone</p>
-                    <p className="text-sm text-muted-foreground">{Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
-                  </div>
-                </div>
-              )}
-
-              {step === 3 && (
-                <div className="space-y-3">
-                  <label className="text-sm font-medium block">Tell us what you care about</label>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    The more detail you give, the more we can ultra-tailor your briefing. Describe the topics, people, teams, companies, or stories you want to hear about each morning — in your own words. Our AI turns this into the daily topics we cover just for you.
-                  </p>
-                  <Textarea
-                    value={formData.freeform_interests}
-                    onChange={e => update("freeform_interests", e.target.value)}
-                    placeholder={COVERAGE_PLACEHOLDER}
-                    className="rounded-xl resize-none text-sm leading-relaxed"
-                    rows={10}
-                  />
-                </div>
-              )}
-
+              {step === 0 && <Step0 formData={formData} update={update} useMyLocation={useMyLocation} geoLoading={geoLoading} />}
+              {step === 1 && <Step1 formData={formData} toggleCoverage={toggleCoverage} update={update} />}
+              {step === 2 && <Step2 formData={formData} update={update} />}
+              {step === 3 && <Step3 formData={formData} update={update} />}
               {step === 4 && (
-                <div className="space-y-5">
-                  <div className="space-y-2 max-h-[50vh] overflow-y-auto">
-                    {RSS_PRESETS.map(rss => (
-                      <button key={rss.id} onClick={() => toggleRSS(rss.id)} className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${formData.selected_rss.includes(rss.id) ? "border-foreground bg-secondary" : "border-border hover:border-muted-foreground/30"}`}>
-                        <Rss className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
-                        <div className="flex-1"><p className="text-sm font-medium">{rss.name}</p><p className="text-xs text-muted-foreground">{rss.category}</p></div>
-                        {formData.selected_rss.includes(rss.id) && <Check className="h-4 w-4 shrink-0" />}
-                      </button>
-                    ))}
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium mb-1.5 block">Add custom RSS feed</label>
-                    <Input value={formData.custom_rss} onChange={e => update("custom_rss", e.target.value)} placeholder="https://example.com/feed.xml" className="h-11 rounded-xl" />
-                  </div>
-                </div>
-              )}
-
-              {step === 5 && (
-                <div className="space-y-4">
-                  <div className="p-5 rounded-2xl border border-border">
-                    <div className="flex items-start gap-3">
-                      <Moon className="h-5 w-5 mt-0.5 shrink-0" strokeWidth={1.5} />
-                      <div>
-                        <p className="text-sm font-medium mb-1">Evening wind-down briefing</p>
-                        <p className="text-sm text-muted-foreground leading-relaxed mb-4">Get a lighter recap of the day — what happened, what's tomorrow, and a thought to end on.</p>
-                        <div className="flex gap-2">
-                          <Button variant={formData.evening_preference ? "default" : "outline"} size="sm" className="rounded-xl" onClick={() => update("evening_preference", true)}>Yes, I'd like that</Button>
-                          <Button variant={!formData.evening_preference ? "default" : "outline"} size="sm" className="rounded-xl" onClick={() => update("evening_preference", false)}>Not now</Button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  <p className="text-xs text-muted-foreground text-center">This feature is coming soon. Your preference will be saved.</p>
-                </div>
+                <Step4
+                  formData={formData}
+                  update={update}
+                  timeInputRef={timeInputRef}
+                  openTimePicker={openTimePicker}
+                />
               )}
             </motion.div>
           </AnimatePresence>
 
           <div className="mt-8">
             <Button onClick={next} disabled={saving} className="w-full h-11 rounded-xl" size="lg">
-              {saving ? "Saving..." : step === STEPS.length - 1 ? "Finish setup" : "Continue"} <ArrowRight className="h-4 w-4 ml-1" />
+              {saving ? "Saving..." : step === STEPS.length - 1 ? "Create my first briefing" : "Continue"}
+              <ArrowRight className="h-4 w-4 ml-1" />
             </Button>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---------- Steps ----------
+
+interface StepProps {
+  formData: {
+    full_name: string;
+    phone: string;
+    location_city: string;
+    location_lat: number | null;
+    location_lng: number | null;
+    coverage: string[];
+    coverage_other: string;
+    style_preset_id: string;
+    freeform_interests: string;
+    delivery_time: string;
+  };
+  update: (key: string, value: unknown) => void;
+}
+
+function Step0({
+  formData,
+  update,
+  useMyLocation,
+  geoLoading,
+}: StepProps & { useMyLocation: () => void; geoLoading: boolean }) {
+  const firstName = (formData.full_name.split(" ")[0] || "").trim();
+  const address =
+    formData.location_lat != null && formData.location_lng != null
+      ? { lat: formData.location_lat, lng: formData.location_lng, city: formData.location_city }
+      : null;
+  const weather = useWeatherPreview(address);
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <label className="text-sm font-medium mb-1.5 block">What should we call you?</label>
+        <Input
+          value={formData.full_name}
+          onChange={(e) => update("full_name", e.target.value)}
+          placeholder="Your name"
+          className="h-11 rounded-xl"
+          autoFocus
+        />
+        <ReactiveLine
+          className="mt-2"
+          input={firstName}
+          format={(name) => `Good morning, ${name} — let's build your briefing.`}
+        />
+      </div>
+
+      <div>
+        <label className="text-sm font-medium mb-1.5 block">Where are you?</label>
+        <div className="flex gap-2">
+          <Input
+            value={formData.location_city}
+            onChange={(e) => {
+              update("location_city", e.target.value);
+              update("location_lat", null);
+              update("location_lng", null);
+            }}
+            placeholder="City or zip code"
+            className="h-11 rounded-xl flex-1"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="h-11 w-11 rounded-xl shrink-0"
+            onClick={useMyLocation}
+            disabled={geoLoading}
+            title="Use my location"
+          >
+            {geoLoading ? <LocateFixed className="h-4 w-4 animate-spin" /> : <MapPin className="h-4 w-4" />}
+          </Button>
+        </div>
+
+        {/* Live weather preview once a location is locked in */}
+        <AnimatePresence>
+          {address && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={{ duration: 0.35 }}
+              className="mt-3 p-3 rounded-xl bg-secondary flex items-center gap-3"
+            >
+              <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-background text-xs font-medium">
+                <MapPin className="h-3 w-3" /> {formData.location_city || "Your location"}
+              </span>
+              {weather.state === "ready" && weather.data ? (
+                <span className="text-sm font-semibold tabular-nums">
+                  {weather.data.tempF}° · {weather.data.condition}
+                </span>
+              ) : weather.state === "loading" ? (
+                <span className="text-xs text-muted-foreground">Loading weather…</span>
+              ) : null}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <ReactiveLine
+          className="mt-2"
+          input={address ? "ok" : ""}
+          format={() => "Using this for weather and local updates."}
+          thinkingMs={400}
+        />
+      </div>
+    </div>
+  );
+}
+
+function Step1({
+  formData,
+  toggleCoverage,
+  update,
+}: StepProps & { toggleCoverage: (id: string) => void }) {
+  const selectedLabels = COVERAGE_OPTIONS.filter(
+    (o) => formData.coverage.includes(o.id) && o.id !== "other",
+  ).map((o) => o.label);
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-2">
+        {COVERAGE_OPTIONS.map((opt) => {
+          const selected = formData.coverage.includes(opt.id);
+          const Icon = opt.icon;
+          return (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => toggleCoverage(opt.id)}
+              className={`flex items-start gap-2 p-3 rounded-xl border text-left transition-all ${
+                selected ? "border-foreground bg-secondary" : "border-border hover:border-muted-foreground/30"
+              }`}
+            >
+              <Icon
+                className={`h-4 w-4 shrink-0 mt-0.5 ${selected ? "text-foreground" : "text-muted-foreground"}`}
+                strokeWidth={1.5}
+              />
+              <span className="text-xs font-medium leading-snug">{opt.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {formData.coverage.includes("other") && (
+        <Textarea
+          value={formData.coverage_other}
+          onChange={(e) => update("coverage_other", e.target.value)}
+          placeholder="Tell us what else — e.g. 49ers scores, Foo Fighters news, PM job openings"
+          className="rounded-xl resize-none"
+          rows={3}
+        />
+      )}
+
+      {/* Live priority pill row */}
+      <AnimatePresence>
+        {(selectedLabels.length > 0 || formData.coverage_other.trim()) && (
+          <motion.div
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 6 }}
+            transition={{ duration: 0.3 }}
+            className="p-3 rounded-xl bg-secondary"
+          >
+            <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-2">
+              Your briefing will prioritize
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {selectedLabels.map((label, i) => (
+                <motion.span
+                  key={label}
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: i * 0.05 }}
+                  className="px-2 py-0.5 rounded-full bg-background text-xs font-medium border border-border"
+                >
+                  {label}
+                </motion.span>
+              ))}
+              {formData.coverage_other.trim()
+                .split(/[,;\n]+/g)
+                .map((t) => t.trim())
+                .filter(Boolean)
+                .slice(0, 6)
+                .map((label) => (
+                  <span
+                    key={`other-${label}`}
+                    className="px-2 py-0.5 rounded-full bg-background text-xs font-medium border border-dashed border-border"
+                  >
+                    {label}
+                  </span>
+                ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <ReactiveLine
+        input={selectedLabels.join(",")}
+        format={() => "Adding that to your daily coverage…"}
+        thinkingMs={500}
+      />
+    </div>
+  );
+}
+
+function Step2({ formData, update }: StepProps) {
+  const selectedPreset =
+    STYLE_PRESETS.find((p) => p.id === formData.style_preset_id) ?? STYLE_PRESETS[1];
+  const [microFlash, setMicroFlash] = useState<number>(0);
+
+  // Each time the preset changes, briefly show the microline.
+  useEffect(() => {
+    setMicroFlash((n) => n + 1);
+  }, [formData.style_preset_id]);
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        {STYLE_PRESETS.map((p) => {
+          const selected = p.id === formData.style_preset_id;
+          return (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => update("style_preset_id", p.id)}
+              className={`w-full flex items-start gap-3 p-3.5 rounded-xl border text-left transition-all ${
+                selected ? "border-foreground bg-secondary" : "border-border hover:border-muted-foreground/30"
+              }`}
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-base font-semibold tabular-nums">{p.duration}</span>
+                  <span className="text-sm font-medium">{p.label}</span>
+                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">{p.desc}</p>
+                <p className="text-[11px] text-muted-foreground italic mt-1">{p.example}</p>
+              </div>
+              {selected && <Check className="h-4 w-4 shrink-0 mt-0.5" />}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Live sample dialogue preview */}
+      <div className="p-4 rounded-xl bg-secondary">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+            Here's what your briefing might sound like
+          </p>
+          <div className="flex items-center gap-0.5 h-3">
+            {[0, 1, 2].map((i) => (
+              <motion.span
+                key={i}
+                animate={{ scaleY: [0.4, 1.2, 0.4] }}
+                transition={{ duration: 0.9, repeat: Infinity, delay: i * 0.15 }}
+                className="block w-0.5 h-2 bg-foreground/60 rounded-full origin-center"
+              />
+            ))}
+          </div>
+        </div>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={selectedPreset.id}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.3 }}
+            className="space-y-1.5"
+          >
+            {selectedPreset.sample.map((line, i) => (
+              <p key={i} className="text-sm italic leading-snug text-foreground/85">
+                "{line}"
+              </p>
+            ))}
+          </motion.div>
+        </AnimatePresence>
+      </div>
+
+      <ReactiveLine
+        key={microFlash}
+        input={selectedPreset.id}
+        format={() => "Got it — tailoring your briefing…"}
+        thinkingMs={500}
+      />
+    </div>
+  );
+}
+
+function Step3({ formData, update }: StepProps) {
+  const chips = useMemo(() => extractChips(formData.freeform_interests), [formData.freeform_interests]);
+  const [debouncedChipCount, setDebouncedChipCount] = useState(0);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedChipCount(chips.length), 700);
+    return () => window.clearTimeout(t);
+  }, [chips.length]);
+
+  return (
+    <div className="space-y-3">
+      <Textarea
+        value={formData.freeform_interests}
+        onChange={(e) => update("freeform_interests", e.target.value)}
+        placeholder={`AI startups — Anthropic, OpenAI, Mistral. Funding rounds and product launches.
+
+49ers fan — scores, injuries, trade rumors.
+
+Foo Fighters tour dates and new releases.`}
+        className="rounded-xl resize-none text-sm leading-relaxed"
+        rows={9}
+      />
+
+      <AnimatePresence>
+        {chips.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="flex flex-wrap gap-1.5"
+          >
+            {chips.map((chip, i) => (
+              <motion.span
+                key={chip}
+                initial={{ opacity: 0, scale: 0.85, x: -4 }}
+                animate={{ opacity: 1, scale: 1, x: 0 }}
+                transition={{ delay: i * 0.04, duration: 0.25 }}
+                className="px-2 py-0.5 rounded-full bg-secondary text-xs font-medium"
+              >
+                {chip}
+              </motion.span>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <ReactiveLine
+        input={debouncedChipCount > 0 ? String(debouncedChipCount) : ""}
+        format={(n) => {
+          const count = Number(n);
+          if (count >= 4) return "This is getting highly personalized.";
+          return "Adding this to your daily briefing…";
+        }}
+        thinkingMs={400}
+      />
+    </div>
+  );
+}
+
+function Step4({
+  formData,
+  update,
+  timeInputRef,
+  openTimePicker,
+}: StepProps & {
+  timeInputRef: React.RefObject<HTMLInputElement>;
+  openTimePicker: () => void;
+}) {
+  return (
+    <div className="space-y-5">
+      <div>
+        <label className="text-sm font-medium mb-2 block">Briefing time</label>
+        <button
+          type="button"
+          onClick={openTimePicker}
+          className="w-full py-7 px-6 rounded-2xl bg-secondary hover:bg-secondary/80 transition-colors flex flex-col items-center justify-center"
+        >
+          <span className="text-5xl font-bold tracking-tight tabular-nums">
+            {formatTime12h(formData.delivery_time)}
+          </span>
+          <span className="text-xs text-muted-foreground mt-2">Tap to change</span>
+        </button>
+        <input
+          ref={timeInputRef}
+          type="time"
+          value={formData.delivery_time}
+          onChange={(e) => update("delivery_time", e.target.value || "07:00")}
+          className="sr-only"
+          aria-label="Briefing time"
+        />
+        <ReactiveLine
+          className="mt-2"
+          input={formData.delivery_time}
+          format={(t) => `Your briefing will arrive at ${formatTime12h(t)}.`}
+          thinkingMs={350}
+        />
+      </div>
+
+      <div>
+        <label className="text-sm font-medium mb-1.5 block">Mobile number</label>
+        <Input
+          type="tel"
+          inputMode="tel"
+          autoComplete="tel"
+          value={formData.phone}
+          onChange={(e) => update("phone", e.target.value)}
+          placeholder="+1 555 123 4567"
+          className="h-11 rounded-xl"
+        />
+        <ReactiveLine
+          className="mt-2"
+          input={formData.phone.trim()}
+          format={() => "We'll text you when it's ready."}
+          thinkingMs={400}
+        />
+      </div>
+
+      <p className="text-xs text-muted-foreground text-center pt-2">
+        Detected timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}
+      </p>
     </div>
   );
 }

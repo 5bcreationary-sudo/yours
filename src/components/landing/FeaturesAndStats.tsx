@@ -1,145 +1,313 @@
 import { motion } from "framer-motion";
-import { Cloud, Car, Calendar, Mail, Newspaper, Mic, Smartphone, Zap, Clock, Sparkles } from "lucide-react";
+import {
+  Calendar,
+  CloudSun,
+  Headphones,
+  List,
+  Mail,
+  MessageSquare,
+  Mic,
+  Share2,
+  Smartphone,
+  Users,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
-const stats = [
-  { value: "5-15", label: "Minutes per briefing" },
-  { value: "6:30am", label: "Avg delivery time" },
-  { value: "94%", label: "Listen-through rate" },
-  { value: "< 2min", label: "Setup time" },
+interface Stat {
+  value: string;
+  label: string;
+}
+
+const STATS: Stat[] = [
+  { value: "5 min", label: "Daily briefing" },
+  { value: "100%", label: "Personalized" },
+  { value: "2", label: "Natural host voices" },
+  { value: "0", label: "Apps to install" },
 ];
 
-const howSteps = [
-  {
-    step: "1",
-    title: "Tell us what matters",
-    description: "Add your interests, connect your calendar & email. Takes 2 minutes.",
-    icon: Sparkles,
-  },
-  {
-    step: "2",
-    title: "We build your briefing",
-    description: "Every morning, AI compiles weather, traffic, calendar, emails, and your custom interests into a podcast-style script.",
-    icon: Zap,
-  },
-  {
-    step: "3",
-    title: "Listen via SMS",
-    description: "Get a text with a link to your beautiful web player. No app needed — just tap and listen.",
-    icon: Smartphone,
-  },
-];
+interface FeatureBullet {
+  icon: LucideIcon;
+  text: string;
+}
 
-const features = [
-  { icon: Cloud, title: "Weather", description: "Local forecast tailored to your schedule" },
-  { icon: Car, title: "Traffic", description: "Commute time from home to work, real-time" },
-  { icon: Calendar, title: "Calendar", description: "Today's meetings with context and prep notes" },
-  { icon: Mail, title: "Emails", description: "AI summary of important new messages" },
-  { icon: Newspaper, title: "News & Interests", description: "AI startups, 49ers scores, stocks — you choose" },
-  { icon: Mic, title: "Multi-Voice Audio", description: "Conversational two-host style, like your own podcast" },
-  { icon: Clock, title: "Your Schedule", description: "Delivered exactly when you wake up, in your timezone" },
-  { icon: Sparkles, title: "Gets Smarter", description: "Learns from your skips and feedback over time" },
+interface Feature {
+  kicker: string;
+  title: string;
+  body: string;
+  bullets: FeatureBullet[];
+  /** Mockup composition rendered as the visual for this row. */
+  Visual: () => JSX.Element;
+}
+
+function PodcastMock() {
+  return (
+    <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+      <div className="flex items-center gap-2 mb-4">
+        <span className="inline-flex items-center justify-center h-7 w-7 rounded-full bg-secondary">
+          <Mic className="h-3.5 w-3.5" strokeWidth={1.5} />
+        </span>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+          Two-host podcast
+        </p>
+      </div>
+
+      <div className="flex items-center gap-2 mb-4">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-[12px] font-medium">
+          <span className="h-2 w-2 rounded-full bg-foreground" /> Charon
+        </span>
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-[12px] font-medium">
+          <span className="h-2 w-2 rounded-full bg-orange-400" /> Achernar
+        </span>
+      </div>
+
+      <div className="flex items-end gap-1 h-16">
+        {Array.from({ length: 28 }).map((_, i) => (
+          <motion.span
+            key={i}
+            animate={{
+              scaleY: [
+                0.3 + (i % 5) * 0.1,
+                0.6 + ((i * 7) % 5) * 0.1,
+                0.4 + (i % 4) * 0.12,
+                0.8 + ((i * 3) % 4) * 0.05,
+              ],
+            }}
+            transition={{ duration: 1.6, repeat: Infinity, delay: i * 0.04, ease: "easeInOut" }}
+            className={`block w-1 rounded-full origin-bottom ${i % 2 === 0 ? "bg-foreground/80" : "bg-orange-400/80"}`}
+            style={{ height: 40 }}
+          />
+        ))}
+      </div>
+
+      <div className="mt-4 flex items-center justify-between text-[11px] text-muted-foreground tabular-nums">
+        <span>1:24</span>
+        <span>5:38</span>
+      </div>
+    </div>
+  );
+}
+
+function PersonalizedMock() {
+  return (
+    <div className="space-y-2">
+      {[
+        { icon: CloudSun, kicker: "Weather", title: "72° · partly cloudy", body: "Light wind, perfect for the 1pm meeting" },
+        { icon: Calendar, kicker: "Calendar", title: "Standup at 10:00", body: "Then design review · 1:1 with Priya" },
+        { icon: Mail, kicker: "Inbox", title: "3 important emails", body: "From Anthropic, Stripe, and your CFO" },
+      ].map((tile) => {
+        const Icon = tile.icon;
+        return (
+          <div key={tile.kicker} className="rounded-xl border border-border bg-card p-3.5 flex items-start gap-3">
+            <span className="inline-flex items-center justify-center h-9 w-9 rounded-lg bg-secondary shrink-0">
+              <Icon className="h-4 w-4" strokeWidth={1.5} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{tile.kicker}</p>
+              <p className="text-sm font-semibold mt-0.5">{tile.title}</p>
+              <p className="text-xs text-muted-foreground leading-snug truncate">{tile.body}</p>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ChaptersMock() {
+  const chapters = [
+    { i: 1, title: "Weather", time: "0:00", active: false },
+    { i: 2, title: "Today's calendar", time: "0:24", active: true },
+    { i: 3, title: "News headlines", time: "0:46", active: false },
+    { i: 4, title: "Sports", time: "1:12", active: false },
+    { i: 5, title: "For you", time: "1:32", active: false },
+  ];
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+      <div className="flex items-center justify-between mb-3 px-1">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Chapters</p>
+        <List className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
+      </div>
+      <ul className="space-y-1">
+        {chapters.map((c) => (
+          <li
+            key={c.i}
+            className={`flex items-center gap-3 px-3 py-2 rounded-lg ${c.active ? "bg-secondary" : ""}`}
+          >
+            <span
+              className={`h-7 w-7 shrink-0 rounded-full inline-flex items-center justify-center text-[11px] font-bold tabular-nums ${
+                c.active ? "bg-foreground text-background" : "bg-secondary text-muted-foreground"
+              }`}
+            >
+              {c.i}
+            </span>
+            <div className="flex-1 min-w-0">
+              <p className={`text-sm font-medium truncate ${c.active ? "text-foreground" : "text-muted-foreground"}`}>
+                {c.title}
+              </p>
+              <p className="text-[11px] text-muted-foreground tabular-nums">{c.time}</p>
+            </div>
+            {c.active && (
+              <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                Playing
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function SmsMock() {
+  return (
+    <div className="relative rounded-[2rem] border border-border bg-card p-6 shadow-sm">
+      <div className="flex items-center gap-2 mb-4 px-1">
+        <span className="inline-flex items-center justify-center h-9 w-9 rounded-full bg-secondary">
+          <MessageSquare className="h-4 w-4" strokeWidth={1.5} />
+        </span>
+        <div>
+          <p className="text-sm font-semibold leading-tight">Yours</p>
+          <p className="text-[11px] text-muted-foreground leading-tight">Text · 7:00 AM</p>
+        </div>
+      </div>
+      <div className="space-y-2">
+        <div className="rounded-2xl rounded-tl-sm bg-secondary px-3.5 py-2.5 max-w-[88%]">
+          <p className="text-sm leading-snug">Good morning ☀️ Your briefing is ready.</p>
+        </div>
+        <div className="rounded-2xl rounded-tl-sm bg-secondary px-3.5 py-2.5 max-w-[88%] inline-flex items-center gap-2">
+          <Headphones className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />
+          <span className="text-sm leading-snug font-medium underline underline-offset-2">yours.fm/b/abc123</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const FEATURES: Feature[] = [
+  {
+    kicker: "Sounds like a podcast",
+    title: "Two natural hosts, talking just to you.",
+    body: "Charon and Achernar walk through your morning together — banter, follow-ups, real reactions. Not a robot reading a script.",
+    bullets: [
+      { icon: Mic, text: "Two voices, real chemistry" },
+      { icon: Users, text: "Different tones to match your day" },
+      { icon: Headphones, text: "Studio-grade audio you'll actually finish" },
+    ],
+    Visual: PodcastMock,
+  },
+  {
+    kicker: "Personalized to your day",
+    title: "Your weather, your inbox, your calendar.",
+    body: "Connect Gmail and Google Calendar and we fold them in. Tell us your interests once and the briefing tailors itself every morning.",
+    bullets: [
+      { icon: Mail, text: "Inbox highlights, not full digests" },
+      { icon: Calendar, text: "Today's meetings, in plain English" },
+      { icon: CloudSun, text: "Weather that knows your zip code" },
+    ],
+    Visual: PersonalizedMock,
+  },
+  {
+    kicker: "Skim or listen",
+    title: "Chapters, transcripts, and section share links.",
+    body: "Hop between weather, calendar, and news instantly. Share a single section to a friend with one tap.",
+    bullets: [
+      { icon: List, text: "Tap any chapter to jump in" },
+      { icon: Share2, text: "Section-level share links" },
+      { icon: Headphones, text: "Lock-screen controls on iPhone & Android" },
+    ],
+    Visual: ChaptersMock,
+  },
+  {
+    kicker: "No app, just a text",
+    title: "We text you when it's ready. Tap to listen.",
+    body: "No App Store gatekeeping. No notification fatigue. Just a single SMS at your briefing time with a link that plays anywhere.",
+    bullets: [
+      { icon: Smartphone, text: "Works on every phone" },
+      { icon: MessageSquare, text: "One message, no spam" },
+      { icon: Headphones, text: "AirPods, car stereo, browser — all good" },
+    ],
+    Visual: SmsMock,
+  },
 ];
 
 export function FeaturesAndStats() {
   return (
-    <>
-      {/* How it works */}
-      <section id="how-it-works" className="max-w-[900px] mx-auto px-8 py-20">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-60px" }}
-          transition={{ duration: 0.6 }}
-          className="text-center mb-14"
-        >
-          <p className="text-xs font-medium tracking-widest uppercase text-[hsl(var(--blue-accent))] mb-3">How It Works</p>
-          <h2 className="text-[clamp(1.75rem,3vw,2.5rem)] font-medium tracking-[-0.02em] text-primary-app">
-            Three steps to your perfect morning
-          </h2>
-        </motion.div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {howSteps.map((s, i) => (
-            <motion.div
-              key={s.step}
-              initial={{ opacity: 0, y: 30 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5, delay: i * 0.15 }}
-              className="text-center"
-            >
-              <div className="h-12 w-12 rounded-2xl bg-accent flex items-center justify-center mx-auto mb-4">
-                <s.icon className="h-6 w-6 text-[hsl(var(--blue-accent))]" strokeWidth={1.5} />
-              </div>
-              <h3 className="text-base font-semibold text-primary-app mb-2">{s.title}</h3>
-              <p className="text-sm text-muted-foreground leading-relaxed">{s.description}</p>
-            </motion.div>
-          ))}
-        </div>
-      </section>
-
-      {/* Stats */}
-      <section className="max-w-[1100px] mx-auto px-8">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-60px" }}
-          transition={{ duration: 0.6, ease: "easeOut" }}
-          className="grid grid-cols-2 sm:grid-cols-4 gap-6 py-8 border-y border-border"
-        >
-          {stats.map((stat, i) => (
+    <section id="features" className="py-20 md:py-28 px-6">
+      <div className="max-w-5xl mx-auto">
+        {/* Stats row */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-border rounded-2xl overflow-hidden border border-border mb-20 md:mb-28">
+          {STATS.map((stat, i) => (
             <motion.div
               key={stat.label}
-              initial={{ opacity: 0, scale: 0.9 }}
+              initial={{ opacity: 0, scale: 0.95 }}
               whileInView={{ opacity: 1, scale: 1 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.4, delay: i * 0.1 }}
-              className="text-center"
+              viewport={{ once: true, margin: "-50px" }}
+              transition={{ duration: 0.5, delay: i * 0.08 }}
+              className="bg-background p-6 text-center"
             >
-              <p className="text-2xl font-semibold tracking-tight text-primary-app">{stat.value}</p>
-              <p className="text-sm text-muted-foreground mt-0.5">{stat.label}</p>
-            </motion.div>
-          ))}
-        </motion.div>
-      </section>
-
-      {/* Feature Grid */}
-      <section id="features" className="max-w-[1100px] mx-auto px-8 py-20">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-60px" }}
-          transition={{ duration: 0.6 }}
-          className="text-center mb-14"
-        >
-          <p className="text-xs font-medium tracking-widest uppercase text-[hsl(var(--blue-accent))] mb-3">What's Inside</p>
-          <h2 className="text-[clamp(1.75rem,3vw,2.5rem)] font-medium tracking-[-0.02em] text-primary-app">
-            Everything you need, nothing you don't
-          </h2>
-          <p className="text-sm text-muted-foreground mt-2 max-w-[440px] mx-auto">
-            Your briefing is assembled from real-time data sources, then narrated in a natural conversational style.
-          </p>
-        </motion.div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {features.map((f, i) => (
-            <motion.div
-              key={f.title}
-              initial={{ opacity: 0, y: 24 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.4, delay: i * 0.06 }}
-              className="rounded-2xl border border-border bg-card p-5 hover:shadow-sm transition-shadow"
-            >
-              <div className="h-10 w-10 rounded-xl bg-accent flex items-center justify-center mb-3">
-                <f.icon className="h-5 w-5 text-[hsl(var(--blue-accent))]" strokeWidth={1.5} />
-              </div>
-              <h3 className="text-sm font-semibold text-primary-app mb-1">{f.title}</h3>
-              <p className="text-xs text-muted-foreground leading-relaxed">{f.description}</p>
+              <p className="text-3xl md:text-4xl font-bold tracking-tight tabular-nums">{stat.value}</p>
+              <p className="text-xs md:text-sm text-muted-foreground mt-1.5">{stat.label}</p>
             </motion.div>
           ))}
         </div>
-      </section>
-    </>
+
+        {/* Alternating-row features */}
+        <div className="space-y-24 md:space-y-32">
+          {FEATURES.map((feature, i) => {
+            const visualLeft = i % 2 === 1;
+            const Visual = feature.Visual;
+            return (
+              <div
+                key={feature.title}
+                className="grid lg:grid-cols-2 gap-10 lg:gap-16 items-center"
+              >
+                {/* Visual */}
+                <motion.div
+                  initial={{ opacity: 0, y: 24, scale: 0.97 }}
+                  whileInView={{ opacity: 1, y: 0, scale: 1 }}
+                  viewport={{ once: true, margin: "-100px" }}
+                  transition={{ duration: 0.7, ease: "easeOut" }}
+                  className={visualLeft ? "lg:order-1" : "lg:order-2"}
+                >
+                  <Visual />
+                </motion.div>
+
+                {/* Copy */}
+                <motion.div
+                  initial={{ opacity: 0, x: visualLeft ? 24 : -24 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  viewport={{ once: true, margin: "-100px" }}
+                  transition={{ duration: 0.6, ease: "easeOut" }}
+                  className={visualLeft ? "lg:order-2" : "lg:order-1"}
+                >
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground mb-3">
+                    {feature.kicker}
+                  </p>
+                  <h3 className="text-3xl md:text-4xl font-bold tracking-[-0.02em] leading-[1.1] mb-4">
+                    {feature.title}
+                  </h3>
+                  <p className="text-muted-foreground leading-relaxed mb-5 max-w-md">
+                    {feature.body}
+                  </p>
+                  <ul className="space-y-2.5">
+                    {feature.bullets.map((b) => {
+                      const Icon = b.icon;
+                      return (
+                        <li key={b.text} className="flex items-start gap-3">
+                          <span className="inline-flex items-center justify-center h-7 w-7 rounded-full bg-secondary shrink-0">
+                            <Icon className="h-3.5 w-3.5" strokeWidth={1.5} />
+                          </span>
+                          <span className="text-sm leading-relaxed pt-1">{b.text}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </motion.div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
   );
 }

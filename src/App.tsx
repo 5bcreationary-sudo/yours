@@ -14,6 +14,8 @@ import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
+import ListenInvite from "./pages/ListenInvite";
+import Demo from "./pages/Demo";
 
 const queryClient = new QueryClient();
 
@@ -54,6 +56,8 @@ const App = () => {
               <Route path="/player/:id" element={<Player />} />
               <Route path="/privacy" element={<Privacy />} />
               <Route path="/terms" element={<Terms />} />
+              <Route path="/listen/:id" element={<ListenInvite />} />
+              <Route path="/demo" element={<Demo />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

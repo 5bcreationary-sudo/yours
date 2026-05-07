@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -21,93 +21,34 @@ import {
 } from "lucide-react";
 import { listRecentBriefingsWithCounts, listSources, triggerBriefing } from "@/lib/supabase";
 import { toast } from "sonner";
-import type { BriefingListItem } from "@/types/database";
 import { YoursLogo } from "@/components/YoursLogo";
+import { BriefingCalendar } from "@/components/BriefingCalendar";
+import { useWeatherPreview } from "@/hooks/useWeatherPreview";
+import { useGmailHighlights, useCalendarToday } from "@/hooks/useGoogleData";
 
 function minutesFromDuration(seconds: number | null, sectionsCount: number): number {
   if (seconds && seconds > 0) return Math.max(1, Math.round(seconds / 60));
   return Math.max(1, Math.round(sectionsCount * 1.5));
 }
 
-interface WeatherSnapshot {
-  tempF: number;
-  condition: string;
-  code: number;
-  highF: number;
-  lowF: number;
-  city: string | null;
+function formatEventTime(iso: string): string {
+  if (!iso) return "";
+  // All-day events are date-only (YYYY-MM-DD); display as "all day" rather than 12am.
+  if (!iso.includes("T")) return "All day";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const h = d.getHours();
+  const m = d.getMinutes();
+  const period = h >= 12 ? "PM" : "AM";
+  const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return `${hour12}:${String(m).padStart(2, "0")} ${period}`;
 }
 
-function describeWeatherCode(code: number): string {
-  if (code === 0) return "Clear";
-  if (code <= 3) return "Partly cloudy";
-  if (code === 45 || code === 48) return "Foggy";
-  if (code >= 51 && code <= 57) return "Drizzle";
-  if (code >= 61 && code <= 67) return "Rain";
-  if (code >= 71 && code <= 77) return "Snow";
-  if (code >= 80 && code <= 82) return "Showers";
-  if (code >= 95) return "Storms";
-  return "—";
-}
-
-async function fetchWeatherFromCoords(lat: number, lon: number): Promise<WeatherSnapshot> {
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&temperature_unit=fahrenheit&timezone=auto&forecast_days=1`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error("weather fetch failed");
-  const body = (await res.json()) as {
-    current?: { temperature_2m?: number; weather_code?: number };
-    daily?: { temperature_2m_max?: number[]; temperature_2m_min?: number[] };
-  };
-  const tempF = Math.round(body.current?.temperature_2m ?? 0);
-  const code = body.current?.weather_code ?? 0;
-  const highF = Math.round(body.daily?.temperature_2m_max?.[0] ?? tempF);
-  const lowF = Math.round(body.daily?.temperature_2m_min?.[0] ?? tempF);
-  return { tempF, code, condition: describeWeatherCode(code), highF, lowF, city: null };
-}
-
-function useWeatherPreview(userAddress: { lat?: number; lng?: number; city?: string } | null) {
-  const [data, setData] = useState<WeatherSnapshot | null>(null);
-  const [state, setState] = useState<"idle" | "loading" | "denied" | "error" | "ready">("idle");
-
-  const load = () => {
-    setState("loading");
-
-    // Prefer saved location from user profile
-    if (userAddress?.lat != null && userAddress?.lng != null) {
-      fetchWeatherFromCoords(userAddress.lat, userAddress.lng)
-        .then((snap) => {
-          setData({ ...snap, city: userAddress.city ?? null });
-          setState("ready");
-        })
-        .catch(() => setState("error"));
-      return;
-    }
-
-    // Fall back to browser geolocation
-    if (!("geolocation" in navigator)) {
-      setState("denied");
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        try {
-          const snap = await fetchWeatherFromCoords(pos.coords.latitude, pos.coords.longitude);
-          setData(snap);
-          setState("ready");
-        } catch {
-          setState("error");
-        }
-      },
-      () => setState("denied"),
-      { maximumAge: 10 * 60 * 1000, timeout: 8000 },
-    );
-  };
-
-  useEffect(() => {
-    load();
-  }, [userAddress?.lat, userAddress?.lng]);
-
-  return { data, state, reload: load };
+/** Strip the "Name <addr>" wrapper most senders use; fall back to whole string. */
+function senderShort(from: string): string {
+  if (!from) return "";
+  const m = from.match(/^"?([^"<]+?)"?\s*<.*>$/);
+  return (m ? m[1] : from).trim();
 }
 
 export default function AppHome() {
@@ -132,10 +73,16 @@ export default function AppHome() {
   const userAddr = user?.home_address as { lat?: number; lng?: number; city?: string } | null;
   const weather = useWeatherPreview(userAddr);
   const [triggering, setTriggering] = useState(false);
+  // pendingGenerate stays true from the moment the user clicks until the query
+  // confirms a generating briefing exists. This prevents the ~300ms flash back
+  // to the old ready state that happens between triggering→false and the
+  // React Query refetch completing.
+  const [pendingGenerate, setPendingGenerate] = useState(false);
 
   const handleGenerate = useCallback(async () => {
-    if (triggering) return;
+    if (triggering || pendingGenerate) return;
     setTriggering(true);
+    setPendingGenerate(true);
     try {
       // Pass user's saved location, fall back to 22101 (McLean, VA).
       const addr = user?.home_address as { lat?: number; lng?: number; city?: string } | null;
@@ -146,11 +93,12 @@ export default function AppHome() {
       queryClient.invalidateQueries({ queryKey: ["briefings", user?.id] });
     } catch (err) {
       console.error("trigger failed", err);
+      setPendingGenerate(false);
       toast.error(err instanceof Error ? err.message : "Couldn't generate briefing");
     } finally {
       setTriggering(false);
     }
-  }, [triggering, user?.id, user?.home_address]);
+  }, [triggering, pendingGenerate, user?.id, user?.home_address]);
 
   const calendarConnected = sources.some((s) => s.type === "calendar" && s.enabled);
   const gmailConnected = sources.some((s) => s.type === "gmail" && s.enabled);
@@ -161,6 +109,14 @@ export default function AppHome() {
       ? latestBriefing
       : history.find((briefing) => briefing.status === "ready") ?? null;
   const generating = history.find((b) => b.status === "generating") ?? null;
+
+  // Once the query confirms a generating briefing, we no longer need to hold
+  // the pending state locally. Also clear if it fails fast (no generating row).
+  useEffect(() => {
+    if (generating) setPendingGenerate(false);
+  }, [generating?.id]);
+
+  const isGenerating = triggering || pendingGenerate || !!generating;
 
   const handleSignOut = async () => {
     await signOut();
@@ -416,98 +372,101 @@ export default function AppHome() {
           )}
         </AnimatePresence>
 
-        {/* Today's briefing CTA */}
-        {readyBriefing ? (
+        {/* Today's briefing CTA — three mutually-exclusive states:
+            1. Generating (triggering locally or backend is generating)
+            2. Ready to play
+            3. No briefing yet — prompt to generate */}
+        <AnimatePresence mode="wait">
+        {isGenerating ? (
           <motion.div
+            key="generating"
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="yours-warm-gradient rounded-2xl p-6 mb-8 shadow-lg"
-          >
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <p className="text-white/60 text-xs font-medium tracking-wider uppercase">Today's Briefing</p>
-                <p className="text-white text-lg font-bold mt-1">Ready to listen</p>
-              </div>
-              <div className="flex items-center gap-1.5 text-white/70 text-xs">
-                <Clock className="h-3.5 w-3.5" />
-                {minutesFromDuration(readyBriefing.audio_duration_seconds, readyBriefing.sections_count)} min
-              </div>
-            </div>
-            <div className="flex items-center gap-2 text-white/70 text-xs mb-5">
-              <Calendar className="h-3.5 w-3.5" />
-              {readyBriefing.sections_count} sections · Weather, Calendar, News, and more
-            </div>
-            <div className="flex gap-2">
-              <Button
-                onClick={() => navigate(`/b/${readyBriefing.id}`)}
-                className="flex-1 h-11 rounded-xl bg-white hover:bg-white/90 text-neutral-900 font-semibold"
-              >
-                <Play className="h-4 w-4 mr-2" fill="currentColor" /> Play briefing
-              </Button>
-              <Button
-                onClick={handleGenerate}
-                disabled={triggering || !!generating}
-                className="h-11 rounded-xl bg-white/20 hover:bg-white/30 text-white font-semibold px-4"
-              >
-                {triggering ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              </Button>
-            </div>
-          </motion.div>
-        ) : (
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.25 }}
             className="yours-warm-gradient rounded-2xl p-6 mb-8 shadow-lg"
           >
             <div className="flex items-center gap-2 mb-2">
-              {generating && <Loader2 className="h-3.5 w-3.5 text-white animate-spin" strokeWidth={2} />}
+              <Loader2 className="h-3.5 w-3.5 text-white animate-spin" strokeWidth={2} />
               <p className="text-white/60 text-xs font-medium tracking-wider uppercase">Today's Briefing</p>
             </div>
+            <p className="text-white text-lg font-bold mb-3">Generating now…</p>
+            <div className="h-1 w-full rounded-full bg-white/20 overflow-hidden mb-3">
+              <motion.div
+                className="h-full bg-white/70"
+                initial={{ width: "5%" }}
+                animate={{ width: ["5%", "60%", "85%"] }}
+                transition={{ duration: 180, ease: "easeOut" }}
+              />
+            </div>
+            <p className="text-white/80 text-xs leading-relaxed">
+              Expected in ~3 minutes. We'll text you the moment it's ready.
+            </p>
+          </motion.div>
+        ) : readyBriefing ? (
+          <motion.div
+            key="ready"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.25 }}
+            className="yours-warm-gradient rounded-2xl p-6 mb-8 shadow-lg"
+          >
+            <div className="flex items-start justify-between mb-1">
+              <p className="text-white/60 text-xs font-medium tracking-wider uppercase">Today's Briefing</p>
+              <div className="flex items-center gap-1.5 text-white/60 text-xs">
+                <Clock className="h-3 w-3" />
+                {minutesFromDuration(readyBriefing.audio_duration_seconds, readyBriefing.sections_count)} min
+              </div>
+            </div>
+            <p className="text-white text-xl font-bold mb-1">Ready to play</p>
+            <p className="text-white/70 text-xs mb-5">
+              {readyBriefing.sections_count} sections · Weather, Calendar, News &amp; more
+            </p>
+            <Button
+              onClick={() => navigate(`/b/${readyBriefing.id}`)}
+              className="w-full h-12 rounded-xl bg-white hover:bg-white/90 text-neutral-900 font-semibold text-base shadow-md mb-2"
+            >
+              <Play className="h-5 w-5 mr-2" fill="currentColor" /> Play briefing
+            </Button>
+            <button
+              onClick={handleGenerate}
+              disabled={isGenerating}
+              className="w-full text-white/60 text-xs py-1 hover:text-white/90 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40"
+            >
+              <RefreshCw className="h-3 w-3" /> Regenerate
+            </button>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="generate"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.25 }}
+            className="yours-warm-gradient rounded-2xl p-6 mb-8 shadow-lg"
+          >
+            <p className="text-white/60 text-xs font-medium tracking-wider uppercase mb-2">Today's Briefing</p>
             <p className="text-white text-lg font-bold mb-3">
               {isLoading
                 ? "Loading..."
-                : generating
-                  ? "Generating now…"
-                  : latestBriefing?.status === "failed"
-                    ? "Today's briefing hit a snag"
-                    : "Your first briefing is on the way"}
+                : latestBriefing?.status === "failed"
+                  ? "Today's briefing hit a snag"
+                  : "Your first briefing is on the way"}
             </p>
-            {generating ? (
-              <>
-                <div className="h-1 w-full rounded-full bg-white/20 overflow-hidden mb-3">
-                  <motion.div
-                    className="h-full bg-white/70"
-                    initial={{ width: "15%" }}
-                    animate={{ width: ["15%", "65%", "85%"] }}
-                    transition={{ duration: 180, ease: "easeOut" }}
-                  />
-                </div>
-                <p className="text-white/80 text-xs leading-relaxed">
-                  Expected in ~3 minutes. We'll text you the moment it's ready.
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="text-white/70 text-xs leading-relaxed mb-4">
-                  Delivered at {deliveryLabel} ({user?.timezone ?? "your timezone"}). Or generate one right now.
-                </p>
-                <Button
-                  onClick={handleGenerate}
-                  disabled={triggering}
-                  className="w-full h-11 rounded-xl bg-white hover:bg-white/90 text-neutral-900 font-semibold"
-                >
-                  {triggering ? (
-                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Starting...</>
-                  ) : (
-                    <><Play className="h-4 w-4 mr-2" fill="currentColor" /> Generate now</>
-                  )}
-                </Button>
-              </>
-            )}
+            <p className="text-white/70 text-xs leading-relaxed mb-4">
+              Delivered at {deliveryLabel} ({user?.timezone ?? "your timezone"}). Or generate one right now.
+            </p>
+            <Button
+              onClick={handleGenerate}
+              disabled={triggering}
+              className="w-full h-11 rounded-xl bg-white hover:bg-white/90 text-neutral-900 font-semibold"
+            >
+              <Play className="h-4 w-4 mr-2" fill="currentColor" /> Generate now
+            </Button>
           </motion.div>
         )}
+        </AnimatePresence>
 
         {/* Preferences tile */}
         <motion.div
@@ -529,7 +488,18 @@ export default function AppHome() {
           </button>
         </motion.div>
 
-        {/* History */}
+        {/* Inbox + calendar — Google integrations (minimal cards) */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.25 }}
+          className="grid sm:grid-cols-2 gap-3 mb-8"
+        >
+          <GmailHighlightsCard />
+          <CalendarTodayCard />
+        </motion.div>
+
+        {/* Briefings calendar */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
@@ -537,64 +507,99 @@ export default function AppHome() {
         >
           <h2 className="text-sm font-semibold mb-3">Recent briefings</h2>
 
-          {history.length === 0 && !isLoading && (
+          {history.length === 0 && !isLoading ? (
             <div className="p-5 rounded-xl border border-dashed border-border bg-card text-center">
               <p className="text-sm font-medium mb-1">No briefings yet</p>
               <p className="text-xs text-muted-foreground leading-relaxed">
                 Your first briefing will arrive at {deliveryLabel} in {user?.timezone ?? "your timezone"}.
               </p>
             </div>
+          ) : (
+            <BriefingCalendar briefings={history} isLoading={isLoading} />
           )}
-
-          <div className="space-y-2">
-            {history.map((b: BriefingListItem) => {
-              const isReady = b.status === "ready";
-              const dateLabel = new Date(b.date).toLocaleDateString("en-US", {
-                weekday: "short",
-                month: "short",
-                day: "numeric",
-              });
-              const preview = b.preview_titles.length ? b.preview_titles.join(" + ") : null;
-              return (
-                <button
-                  key={b.id}
-                  onClick={() => isReady && navigate(`/b/${b.id}`)}
-                  disabled={!isReady}
-                  className="w-full p-4 rounded-xl border border-border bg-card hover:shadow-sm transition-shadow text-left disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <p className="text-sm font-medium">{dateLabel}</p>
-                        {isReady ? (
-                          <span className="text-[10px] text-muted-foreground">
-                            · {minutesFromDuration(b.audio_duration_seconds, b.sections_count)} min
-                          </span>
-                        ) : b.status === "generating" ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
-                            <Loader2 className="h-3 w-3 animate-spin" strokeWidth={2} /> Generating
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-muted-foreground capitalize">· {b.status}</span>
-                        )}
-                      </div>
-                      {preview && (
-                        <p className="text-xs text-muted-foreground line-clamp-1">{preview}</p>
-                      )}
-                    </div>
-                    {isReady && (
-                      <div className="inline-flex items-center gap-1 text-xs font-medium shrink-0 mt-0.5">
-                        <Play className="h-3.5 w-3.5" fill="currentColor" />
-                        Listen
-                      </div>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
         </motion.div>
       </div>
+    </div>
+  );
+}
+
+function GmailHighlightsCard() {
+  const navigate = useNavigate();
+  const { data, isLoading } = useGmailHighlights();
+  const items = data?.items ?? [];
+  const connected = items.length > 0 || isLoading || data !== undefined;
+  // `data === undefined` while disabled (no gmail source) — treat as disconnected.
+
+  return (
+    <div className="p-4 rounded-xl border border-border bg-card">
+      <div className="flex items-center gap-1.5 mb-2">
+        <Mail className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
+        <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Inbox highlights</p>
+      </div>
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" /> Loading…
+        </div>
+      ) : !connected ? (
+        <button
+          type="button"
+          onClick={() => navigate("/settings")}
+          className="text-xs text-foreground font-medium inline-flex items-center gap-1 hover:underline"
+        >
+          Connect Gmail <ChevronRight className="h-3 w-3" />
+        </button>
+      ) : items.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No new highlights today.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {items.slice(0, 3).map((item) => (
+            <li key={item.id} className="text-xs leading-snug">
+              <span className="font-medium">{senderShort(item.from)}</span>
+              <span className="text-muted-foreground">: {item.subject}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function CalendarTodayCard() {
+  const navigate = useNavigate();
+  const { data, isLoading } = useCalendarToday();
+  const events = data?.events ?? [];
+  const connected = events.length > 0 || isLoading || data !== undefined;
+
+  return (
+    <div className="p-4 rounded-xl border border-border bg-card">
+      <div className="flex items-center gap-1.5 mb-2">
+        <Calendar className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
+        <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Today's calendar</p>
+      </div>
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" /> Loading…
+        </div>
+      ) : !connected ? (
+        <button
+          type="button"
+          onClick={() => navigate("/settings")}
+          className="text-xs text-foreground font-medium inline-flex items-center gap-1 hover:underline"
+        >
+          Connect Calendar <ChevronRight className="h-3 w-3" />
+        </button>
+      ) : events.length === 0 ? (
+        <p className="text-xs text-muted-foreground">Nothing on the books.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {events.slice(0, 4).map((e) => (
+            <li key={e.id} className="text-xs leading-snug flex gap-2">
+              <span className="text-muted-foreground tabular-nums shrink-0">{formatEventTime(e.start_iso)}</span>
+              <span className="truncate">{e.summary}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

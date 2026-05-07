@@ -65,7 +65,10 @@ const SCRIPT_TOOL: AnthropicTool = {
             speaker: {
               type: "string",
               enum: ["A", "B"],
-              description: "HOST A = energetic, drives momentum. HOST B = calm, asks the follow-up. ALTERNATE between the two.",
+              description:
+                "HOST A = warm, upbeat, natural — drives the topic introductions and the headline facts. " +
+                "HOST B = calm, thoughtful, grounded — supplies context and the why-it-matters angle, " +
+                "never excitable, never a yes-person. ALTERNATE between the two.",
             },
             text: {
               type: "string",

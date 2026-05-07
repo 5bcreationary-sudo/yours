@@ -5,7 +5,7 @@ interface YoursLogoProps {
   className?: string;
 }
 
-export function YoursLogo({ size = 32, className }: YoursLogoProps) {
+export function YoursLogo({ size = 56, className }: YoursLogoProps) {
   return (
     <img
       src="/logo.png"

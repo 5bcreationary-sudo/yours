@@ -14,6 +14,7 @@ export interface UserProfile {
   briefing_mode: "morning" | "commute" | "executive";
   briefing_style: "straightforward" | "conversational";
   onboarding_complete: boolean;
+  /** @deprecated UI removed in v0.9.9; column retained for rollback. */
   evening_preference: boolean;
   home_address: Record<string, unknown> | null;
   work_address: Record<string, unknown> | null;
@@ -75,6 +76,24 @@ export interface BriefingSection {
   card_payload: Record<string, unknown> | null;
   order: number;
   duration_minutes: number;
+}
+
+// Google integrations — surfaced on AppHome via gmail-summary / calendar-today edge functions.
+
+export interface GmailHighlight {
+  id: string;
+  from: string;
+  subject: string;
+  snippet: string;
+  received_at: string;
+}
+
+export interface CalendarEvent {
+  id: string;
+  summary: string;
+  start_iso: string;
+  end_iso: string;
+  location?: string;
 }
 
 // RSS source presets

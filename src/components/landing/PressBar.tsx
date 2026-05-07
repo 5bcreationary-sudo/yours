@@ -1,51 +1,65 @@
-import { motion } from "framer-motion";
-import { User } from "lucide-react";
+import { Briefcase, Building2, Coffee, GraduationCap, Laptop, Mic, Palette, Rocket } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
-const testimonials = [
-  { name: "Sarah K.", role: "PM at Stripe", quote: "Replaced my morning doomscroll entirely." },
-  { name: "Marcus L.", role: "Founder, SeedAI", quote: "Like having a personal news anchor who knows me." },
-  { name: "Priya M.", role: "VP Eng at Notion", quote: "The commute game-changer I didn't know I needed." },
+interface Persona {
+  icon: LucideIcon;
+  label: string;
+}
+
+// Generic personas. Yours.fm is pre-launch, so no real press logos or named
+// testimonials yet — these are anonymized role pills that suggest a diverse
+// listener base. Replace with real names/companies once available.
+const PERSONAS: Persona[] = [
+  { icon: Briefcase, label: "Product Manager · SF" },
+  { icon: Rocket, label: "Founder · NYC" },
+  { icon: GraduationCap, label: "PhD Student · Boston" },
+  { icon: Palette, label: "Designer · Austin" },
+  { icon: Laptop, label: "Engineer · Seattle" },
+  { icon: Mic, label: "Podcaster · LA" },
+  { icon: Coffee, label: "Operator · Chicago" },
+  { icon: Building2, label: "Investor · Miami" },
 ];
 
-const doubled = [...testimonials, ...testimonials, ...testimonials];
+function Track({ ariaHidden = false }: { ariaHidden?: boolean }) {
+  return (
+    <div className="flex items-center gap-3 shrink-0 px-1.5" aria-hidden={ariaHidden}>
+      {PERSONAS.map((p, i) => {
+        const Icon = p.icon;
+        return (
+          <div
+            key={`${p.label}-${i}`}
+            className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3.5 py-2 shadow-sm whitespace-nowrap"
+          >
+            <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-secondary">
+              <Icon className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
+            </span>
+            <span className="text-[13px] font-medium">{p.label}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export function PressBar() {
   return (
-    <motion.section
-      initial={{ opacity: 0, y: 20 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-40px" }}
-      transition={{ duration: 0.6 }}
-      className="py-14 overflow-hidden"
-    >
-      <p className="text-center text-xs font-medium tracking-widest uppercase text-muted-foreground mb-8">
-        Loved by early users
-      </p>
-      <div className="relative">
-        <div className="absolute left-0 top-0 bottom-0 w-32 bg-gradient-to-r from-background to-transparent z-10" />
-        <div className="absolute right-0 top-0 bottom-0 w-32 bg-gradient-to-l from-background to-transparent z-10" />
+    <section className="py-14 md:py-20 px-6 border-t border-border/60">
+      <div className="max-w-5xl mx-auto">
+        <p className="text-center text-[11px] font-medium text-muted-foreground uppercase tracking-[0.18em] mb-6">
+          Loved by early listeners
+        </p>
 
-        <motion.div
-          className="flex items-center gap-6 whitespace-nowrap"
-          animate={{ x: ["0%", "-33.33%"] }}
-          transition={{ duration: 30, ease: "linear", repeat: Infinity }}
-        >
-          {doubled.map((t, i) => (
-            <div
-              key={`${t.name}-${i}`}
-              className="flex items-center gap-3 select-none rounded-xl border border-border bg-card px-5 py-3 min-w-[280px]"
-            >
-              <div className="h-9 w-9 rounded-full bg-accent flex items-center justify-center shrink-0">
-                <User className="h-4 w-4 text-muted-foreground/50" strokeWidth={1.5} />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[12px] text-primary-app font-medium truncate">"{t.quote}"</p>
-                <p className="text-[10px] text-muted-foreground">{t.name} · {t.role}</p>
-              </div>
-            </div>
-          ))}
-        </motion.div>
+        <div className="relative overflow-hidden">
+          {/* Edge fades to mask the loop seam */}
+          <div className="pointer-events-none absolute inset-y-0 left-0 w-16 z-10 bg-gradient-to-r from-background to-transparent" />
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-16 z-10 bg-gradient-to-l from-background to-transparent" />
+
+          <div className="flex w-max animate-marquee">
+            <Track />
+            <Track ariaHidden />
+          </div>
+        </div>
       </div>
-    </motion.section>
+    </section>
   );
 }

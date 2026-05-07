@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useParams, Link, useLocation } from "react-router-dom";
+import { useParams, Link, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Share, Pause, Play, SkipForward, List, FileText, X, ExternalLink } from "lucide-react";
+import { ArrowLeft, Share, Share2, Pause, Play, SkipForward, List, FileText, X, ExternalLink, Loader2, Sun, Cloud, CloudRain, CloudSnow, Calendar as CalendarIcon, Trophy } from "lucide-react";
+import { toast } from "sonner";
 import type { BriefingSection } from "@/types/database";
-import { getBriefingForPlayer, markBriefingListened } from "@/lib/supabase";
+import { getBriefingForPlayer, markBriefingListened, shareBriefing } from "@/lib/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { YoursLogo } from "@/components/YoursLogo";
 
@@ -12,6 +13,55 @@ function formatTime(seconds: number) {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+// `new Date("2026-05-06")` parses as UTC midnight, which falls on the previous
+// day in any timezone west of UTC. Constructing via (y, m-1, d) lands the Date
+// at LOCAL midnight on the intended calendar day, so today's briefing always
+// shows today and yesterday's replay correctly says yesterday.
+function parseLocalDate(yyyyMmDd: string): Date {
+  const [y, m, d] = yyyyMmDd.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+function formatBriefingDate(yyyyMmDd: string): string {
+  return parseLocalDate(yyyyMmDd).toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+// Heuristic seconds budget for the spoken intro turns (greeting + 2-3 sentence
+// headline summary), measured on top of the music-intro length. The TTS
+// pipeline does not yet emit an explicit [intro_end] marker, so we use this
+// soft window: while currentTime is within the music + spoken-intro window,
+// we show the visual recap instead of the per-section transcript view.
+const SPOKEN_INTRO_SECONDS = 14;
+
+// Pick a weather glyph from a free-text condition string. Falls through to
+// Sun on no match — we'd rather show a benign default than a wrong icon
+// (e.g. a Snow icon for "scattered showers" because the regex was greedy).
+function pickWeatherIcon(text: string | undefined | null) {
+  const t = (text ?? "").toLowerCase();
+  if (/(snow|flurr|sleet|blizzard)/.test(t)) return CloudSnow;
+  if (/(rain|shower|drizzle|thunderstorm|storm)/.test(t)) return CloudRain;
+  if (/(cloud|overcast|fog|haze|mist)/.test(t)) return Cloud;
+  return Sun;
+}
+
+// Try to extract a temperature like "73°", "73°F", or "73 degrees" from a
+// loose summary string. Returns null when nothing matches — caller then
+// falls back to showing the section summary text rather than fabricating a
+// number. Spelled-out temps ("seventy-three") are intentionally NOT parsed
+// here; the LLM mixes spellings, and a flaky parse looks worse than no temp.
+function extractTemperature(text: string | undefined | null): string | null {
+  if (!text) return null;
+  const m = text.match(/(-?\d{1,3})\s*°\s*[FC]?/);
+  if (m) return `${m[1]}°`;
+  const m2 = text.match(/(-?\d{1,3})\s*(?:degrees?|deg\b)/i);
+  if (m2) return `${m2[1]}°`;
+  return null;
 }
 
 /** Split a summary blob into bullet-friendly paragraphs. */
@@ -35,10 +85,12 @@ function splitSummary(text: string): string[] {
   return chunks.filter(Boolean);
 }
 
-/** Seconds of intro music jingle before spoken content begins.
- *  Matches the programmatic intro chime (~3.2s) + small gap before speech
- *  generated in supabase/functions/_shared/audio-wav.ts. */
-const INTRO_MUSIC_SECONDS = 3.6;
+/** Seconds of intro music before spoken content begins. Matches the
+ *  programmatic intro music (8.8s with built-in fade-out) + 0.4s gap
+ *  generated in supabase/functions/_shared/audio-wav.ts. Used only as a
+ *  fallback when the server-recorded section_offsets are missing or partial
+ *  — when offsets are present, sectionOffsets[0] is the real intro length. */
+const INTRO_MUSIC_SECONDS = 9.2;
 
 /** Approximate per-section start times (seconds) when the server didn't
  *  record exact offsets, or recorded fewer than sections.length offsets.
@@ -98,12 +150,22 @@ export default function Player() {
   const { briefingId, id } = useParams();
   const briefingParam = briefingId ?? id ?? "";
   const location = useLocation();
+  const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const firstName = user?.full_name?.split(" ")[0] || null;
   const token = useMemo(
     () => new URLSearchParams(location.search).get("t"),
     [location.search],
   );
+  // Optional `?s=<index>` deep-link to a specific section. Parsed once here;
+  // clamped/applied after audio metadata loads.
+  const sectionParam = useMemo(() => {
+    const raw = new URLSearchParams(location.search).get("s");
+    if (raw == null) return null;
+    const n = Number(raw);
+    return Number.isInteger(n) && n >= 0 ? n : null;
+  }, [location.search]);
+  const autoplayRequested = (location.state as { autoplay?: boolean } | null)?.autoplay === true;
   const backHref = token ? "/" : "/app";
 
   // Don't fire the query until we either have a signed-link token (no auth
@@ -142,6 +204,80 @@ export default function Player() {
   const [showChapters, setShowChapters] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
+  const [sharing, setSharing] = useState(false);
+
+  const presentShareLink = useCallback(
+    async (url: string, title: string, text: string, copyToast: string) => {
+      const shareData = { title, text, url };
+      const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+      if (typeof navigator.share === "function" && (!nav.canShare || nav.canShare(shareData))) {
+        await navigator.share(shareData);
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+        toast.success(copyToast);
+      } else {
+        prompt("Copy this share link:", url);
+      }
+    },
+    [],
+  );
+
+  const handleShare = useCallback(async () => {
+    if (sharing || !data?.id) return;
+    setSharing(true);
+    try {
+      const { url } = await shareBriefing(data.id);
+      const sectionTitles = (data.sections ?? [])
+        .map((s) => s.title)
+        .slice(0, 3)
+        .join(" · ");
+      await presentShareLink(
+        url,
+        "Yours — Today's Briefing",
+        sectionTitles
+          ? `Listen to today's Yours briefing: ${sectionTitles}`
+          : "Listen to today's Yours briefing.",
+        "Share link copied to clipboard",
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Couldn't create share link";
+      // AbortError fires when the user dismisses the system share sheet — ignore.
+      if (!/AbortError/i.test(msg)) {
+        console.error("[player] share failed", err);
+        toast.error(msg);
+      }
+    } finally {
+      setSharing(false);
+    }
+  }, [sharing, data?.id, data?.sections, presentShareLink]);
+
+  const handleShareSection = useCallback(
+    async (index: number) => {
+      if (sharing || !data?.id) return;
+      const section = data.sections?.[index];
+      if (!section) return;
+      setSharing(true);
+      try {
+        const { url } = await shareBriefing(data.id, { sectionIndex: index });
+        await presentShareLink(
+          url,
+          `Yours — ${section.title}`,
+          `Listen to "${section.title}" from today's Yours briefing.`,
+          "Section share link copied",
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Couldn't create share link";
+        if (!/AbortError/i.test(msg)) {
+          console.error("[player] section share failed", err);
+          toast.error(msg);
+        }
+      } finally {
+        setSharing(false);
+      }
+    },
+    [sharing, data?.id, data?.sections, presentShareLink],
+  );
+
   // When user manually taps a section tab, we pin it until audio catches up
   const [manualSection, setManualSection] = useState<number | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -188,6 +324,21 @@ export default function Player() {
       return next - offset;
     });
   }, [sectionOffsets, totalDuration]);
+
+  // The "intro" of the briefing covers the music sting + the spoken greeting +
+  // the 2-3 sentence headline summary, ending just before the first content
+  // segment starts. While currentTime is inside this window we show the
+  // visual recap instead of the per-section transcript view.
+  //
+  // We approximate the boundary as (music end) + SPOKEN_INTRO_SECONDS. The
+  // music end comes from sectionOffsets[0] when the server recorded real
+  // offsets, otherwise the static fallback. A future server-side [intro_end]
+  // marker can replace this heuristic with an exact value.
+  const introEndTime = useMemo(() => {
+    const musicEnd = sectionOffsets[0] ?? INTRO_MUSIC_SECONDS;
+    return musicEnd + SPOKEN_INTRO_SECONDS;
+  }, [sectionOffsets]);
+  const showIntroRecap = currentTime < introEndTime;
 
   const cycleSpeed = () => {
     const idx = speeds.indexOf(speed);
@@ -263,6 +414,76 @@ export default function Player() {
     el.src = url;
     el.load();
   }, [data?.audio_signed_url]);
+
+  // One-shot deep-link to ?s=<index> — seek to that section's start once audio
+  // metadata is available. Doesn't auto-play (Safari/iOS block autoplay
+  // without a user gesture). Guarded so signed-URL refreshes don't re-trigger.
+  const deepLinkAppliedRef = useRef(false);
+  useEffect(() => {
+    if (deepLinkAppliedRef.current) return;
+    if (sectionParam == null) return;
+    if (sections.length === 0) return;
+    const el = audioRef.current;
+    if (!el) return;
+    if (sectionOffsets.length !== sections.length) return; // wait for offsets
+    const targetIndex = Math.max(0, Math.min(sectionParam, sections.length - 1));
+    const targetTime = sectionOffsets[targetIndex];
+    const apply = () => {
+      const a = audioRef.current;
+      if (!a) return;
+      // If duration isn't available yet, defer — but mark applied so we don't
+      // race the same effect firing again on next render.
+      if (!isFinite(a.duration) || a.duration === 0) return;
+      a.currentTime = Math.min(targetTime, Math.max(0, a.duration - 0.5));
+      setActiveSectionIndex(targetIndex);
+      setManualSection(targetIndex);
+      deepLinkAppliedRef.current = true;
+    };
+    if (isFinite(el.duration) && el.duration > 0) {
+      apply();
+    } else {
+      const onMeta = () => apply();
+      el.addEventListener("loadedmetadata", onMeta, { once: true });
+      return () => el.removeEventListener("loadedmetadata", onMeta);
+    }
+  }, [sectionParam, sections.length, sectionOffsets, data?.audio_signed_url]);
+
+  // One-shot autoplay when arriving via state.autoplay (set by GenerationFlow
+  // after first-briefing onboarding). Browsers count the originating click as
+  // a user gesture for ~5s, so this usually succeeds. iOS Safari can still
+  // refuse — we surface a small chip and leave the player paused in that case.
+  const autoplayAppliedRef = useRef(false);
+  useEffect(() => {
+    if (autoplayAppliedRef.current) return;
+    if (!autoplayRequested) return;
+    if (!data?.audio_signed_url) return;
+    const el = audioRef.current;
+    if (!el) return;
+    const tryPlay = () => {
+      autoplayAppliedRef.current = true;
+      const promise = el.play();
+      if (promise) {
+        promise
+          .then(() => setIsPlaying(true))
+          .catch(() => {
+            setIsPlaying(false);
+            // Not an error — just leave paused. Surface a hint via toast.
+            toast("Tap play to listen", { duration: 4000 });
+          });
+      } else {
+        setIsPlaying(true);
+      }
+      // Clear the autoplay flag from history state so refresh doesn't replay.
+      navigate(location.pathname + location.search, { replace: true, state: {} });
+    };
+    if (el.readyState >= 2) {
+      tryPlay();
+    } else {
+      const onReady = () => tryPlay();
+      el.addEventListener("loadedmetadata", onReady, { once: true });
+      return () => el.removeEventListener("loadedmetadata", onReady);
+    }
+  }, [autoplayRequested, data?.audio_signed_url, navigate, location.pathname, location.search]);
 
   // Sync audio playbackRate when speed changes (no play() here — that must
   // be called synchronously in a user gesture, see togglePlay below).
@@ -384,6 +605,28 @@ export default function Player() {
   const cardItems = payload?.items;
   const sources = payload?.sources;
 
+  // ---------- Intro recap data ----------
+  // The visual recap shown during the spoken intro picks one of each section
+  // type from the briefing if present, then renders structured cards. Looked
+  // up via section.type rather than position so reordering the briefing
+  // (e.g. executive mode leading with news) doesn't break the recap.
+  type RecapPayload = {
+    items?: string[];
+    sources?: Array<{ title: string; url?: string; image_url?: string; source_name?: string }>;
+  };
+  const weatherSection = sections.find((s) => s.type === "weather");
+  const newsSection = sections.find((s) => s.type === "news");
+  const calendarSection = sections.find((s) => s.type === "calendar");
+  const sportsSection = sections.find((s) => s.type === "sports");
+  const newsHeadlines = ((newsSection?.card_payload as RecapPayload | null)?.sources ?? []).slice(0, 3);
+  const weatherIconText = `${weatherSection?.summary ?? ""} ${
+    ((weatherSection?.card_payload as RecapPayload | null)?.items ?? []).join(" ")
+  }`;
+  const WeatherIcon = pickWeatherIcon(weatherIconText);
+  const weatherTemp =
+    extractTemperature(weatherSection?.summary) ??
+    extractTemperature(((weatherSection?.card_payload as RecapPayload | null)?.items ?? []).join(" "));
+
   const allChunks = useMemo(() => {
     const chunks = [...summaryChunks];
     if (cardItems) chunks.push(...cardItems);
@@ -447,14 +690,10 @@ export default function Player() {
   useEffect(() => {
     if (!data?.id || typeof navigator === "undefined" || !("mediaSession" in navigator)) return;
     const ms = navigator.mediaSession;
-    const dateLabel = new Date(data.date).toLocaleDateString("en-US", {
-      weekday: "long",
-      month: "long",
-      day: "numeric",
-    });
+    const dateLabel = formatBriefingDate(data.date);
     ms.metadata = new MediaMetadata({
-      title: `Yours — ${dateLabel}`,
-      artist: activeSection?.title ?? "Daily Briefing",
+      title: `${dateLabel} – Briefing`,
+      artist: "Yours",
       album: "Yours",
       // Empty artwork array = no image surfaced (per user: only use real
       // article images; never a static logo). Browsers show the fav-icon
@@ -479,7 +718,7 @@ export default function Player() {
         try { ms.setActionHandler(action, null); } catch { /* noop */ }
       }
     };
-  }, [data?.id, data?.date, activeSection?.title, artworkUrl, activeSectionIndex, sections.length, jumpToSection]);
+  }, [data?.id, data?.date, artworkUrl, activeSectionIndex, sections.length, jumpToSection]);
 
   // Mirror playback state to MediaSession so the OS lock-screen widget knows
   // whether to show Play or Pause.
@@ -599,192 +838,339 @@ export default function Player() {
         </div>
       )}
 
-      {/* Top bar */}
-      <div className="flex items-center justify-between px-5 pt-[env(safe-area-inset-top,12px)] pb-3 pt-5">
+      {/* Top bar — extra top padding so the buttons clear the iOS notch
+          comfortably and don't crowd the title. */}
+      <div
+        className="flex items-center justify-between px-5 pb-3"
+        style={{ paddingTop: "calc(env(safe-area-inset-top, 12px) + 28px)" }}
+      >
         <Link
           to={backHref}
           className="h-10 w-10 rounded-full bg-white/15 backdrop-blur-sm flex items-center justify-center"
         >
           <ArrowLeft className="h-5 w-5 text-white/90" strokeWidth={1.5} />
         </Link>
-        <div className="flex items-center gap-2">
-          <YoursLogo size={44} className="text-white" />
-          <h1 className="text-white text-lg font-bold tracking-tight">
-            {firstName ? `${getGreeting()}, ${firstName}` : getGreeting()}
-          </h1>
-        </div>
-        <button className="h-10 w-10 rounded-full bg-white/15 backdrop-blur-sm flex items-center justify-center">
-          <Share className="h-4.5 w-4.5 text-white/90" strokeWidth={1.5} />
+        {/* Text-only title — logo lives in the intro recap below where it can
+            breathe at premium size. The personalized greeting also moves to
+            the recap so the top bar stays clean. */}
+        <h1 className="text-white text-xl font-bold tracking-tight">Yours</h1>
+        <button
+          onClick={handleShare}
+          disabled={sharing}
+          className="h-10 w-10 rounded-full bg-white/15 backdrop-blur-sm flex items-center justify-center hover:bg-white/25 transition-colors disabled:opacity-60"
+        >
+          {sharing ? (
+            <Loader2 className="h-4 w-4 text-white/90 animate-spin" />
+          ) : (
+            <Share className="h-4.5 w-4.5 text-white/90" strokeWidth={1.5} />
+          )}
         </button>
       </div>
 
-      {/* Section tabs */}
-      <div className="px-5 pt-2 pb-4">
-        <div className="flex gap-2 overflow-x-auto no-scrollbar justify-center">
-          {sections.map((s, i) => {
-            const isCurrent = i === activeSectionIndex;
-            const isPast = currentTime >= (sectionOffsets[i + 1] ?? totalDuration);
-            return (
-              <button
-                key={s.id}
-                onClick={() => {
-                  setActiveSectionIndex(i);
-                  setManualSection(i);
-                }}
-                className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all ${
-                  isCurrent
-                    ? "bg-white/25 text-white"
-                    : isPast
-                      ? "bg-white/15 text-white/70"
-                      : "bg-white/10 text-white/40 hover:text-white/60"
-                }`}
-              >
-                {s.title}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Main content area — scrollable, centered */}
-      <div className="flex-1 overflow-y-auto pb-56">
-        <div className="max-w-lg mx-auto px-6">
+      {/* Crossfade between intro recap (first ~14s of spoken intro) and the
+          per-section transcript view. mode="wait" makes the outgoing layer
+          finish fading before the incoming one starts, which avoids the
+          two views briefly overlapping at scroll position 0. */}
+      <AnimatePresence mode="wait">
+        {showIntroRecap ? (
           <motion.div
-            key={activeSectionIndex}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-            className="text-center"
+            key="intro-recap"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.6, ease: "easeOut" }}
+            className="flex-1 overflow-y-auto pb-56"
           >
-            {/* Section title */}
-            <p className="text-white/50 text-xs font-semibold tracking-wider uppercase mb-4">
-              {activeSection.title}
-            </p>
+            <div className="max-w-lg mx-auto px-6 pt-4">
+              {/* Premium brand mark — large and centered, sets the tone for
+                  the visual recap. Top bar stays text-only "Yours" so this
+                  is the only logo on the page. */}
+              <div className="flex justify-center mb-8 mt-2">
+                <YoursLogo size={96} className="text-white" />
+              </div>
 
-            {/* Summary text — bold for spoken, thin for upcoming. Each chunk
-                gets a ref so the active one can be scrolled into view. */}
-            {summaryChunks.length === 1 ? (
-              <div
-                ref={(el) => { chunkRefs.current[0] = el; }}
-                className="scroll-mt-24"
-              >
-                <p
-                  className={`text-[22px] leading-[1.45] tracking-[-0.01em] mb-6 transition-all duration-500 ${
-                    spokenUpTo >= 1
-                      ? "text-white font-bold"
-                      : "text-white/40 font-light"
-                  }`}
-                >
-                  {summaryChunks[0]}
+              {/* Greeting + date. Mirrors the spoken intro the listener
+                  hears under this card: "Good morning, [Name]. Here's
+                  what's happening today…". */}
+              <div className="text-center mb-10">
+                <p className="text-white/60 text-xs font-semibold tracking-[0.2em] uppercase mb-3">
+                  {formatBriefingDate(data.date)}
+                </p>
+                <h2 className="text-white text-[34px] font-bold tracking-tight leading-[1.1]">
+                  {firstName ? `${getGreeting()}, ${firstName}.` : `${getGreeting()}.`}
+                </h2>
+                <p className="text-white/75 text-base mt-3 leading-snug">
+                  Here's what's happening today.
                 </p>
               </div>
-            ) : (
-              <div className="space-y-4 mb-6">
-                {summaryChunks.map((chunk, i) => {
-                  const isSpoken = i < spokenUpTo;
-                  const isSpeaking = i === spokenUpTo;
-                  return (
-                    <div
-                      key={i}
-                      ref={(el) => { chunkRefs.current[i] = el; }}
-                      className="flex items-start gap-3 text-left scroll-mt-24"
-                    >
-                      <span
-                        className={`mt-2.5 shrink-0 h-2 w-2 rounded-full transition-colors duration-500 ${
-                          isSpoken || isSpeaking ? "bg-white" : "bg-white/20"
-                        }`}
-                      />
-                      <p
-                        className={`text-lg leading-[1.5] transition-all duration-500 ${
-                          isSpeaking
-                            ? "text-white font-bold"
-                            : isSpoken
-                              ? "text-white/70 font-semibold"
-                              : "text-white/30 font-light"
-                        }`}
-                      >
-                        {chunk}
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
 
-            {/* Card items — same spoken/upcoming treatment. Card items pick
-                up where summary chunks left off in the chunkRefs index. */}
-            {cardItems && cardItems.length > 0 && (
-              <div className="space-y-4 mt-2">
-                {cardItems.map((item, i) => {
-                  const globalIndex = summaryChunks.length + i;
-                  const isSpoken = globalIndex < spokenUpTo;
-                  const isSpeaking = globalIndex === spokenUpTo;
-                  return (
-                    <div
-                      key={i}
-                      ref={(el) => { chunkRefs.current[globalIndex] = el; }}
-                      className="flex items-start gap-3 text-left scroll-mt-24"
-                    >
-                      <span
-                        className={`mt-2 shrink-0 h-2.5 w-2.5 rounded-full border-2 transition-colors duration-500 ${
-                          isSpoken || isSpeaking ? "border-white/80" : "border-white/20"
-                        }`}
-                      />
-                      <p
-                        className={`text-[16px] leading-[1.55] transition-all duration-500 ${
-                          isSpeaking
-                            ? "text-white font-bold"
-                            : isSpoken
-                              ? "text-white/70 font-medium"
-                              : "text-white/25 font-light"
-                        }`}
-                      >
-                        {item}
+              {/* Weather card — icon + extracted temp (when parseable) +
+                  condition. Falls back to summary prose when no temp can be
+                  pulled cleanly from the LLM-written text. */}
+              {weatherSection && (
+                <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-5 mb-3 flex items-center gap-4 border border-white/5">
+                  <WeatherIcon className="h-14 w-14 text-white shrink-0" strokeWidth={1.25} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white/55 text-[10px] font-semibold tracking-[0.18em] uppercase mb-1">
+                      Weather
+                    </p>
+                    {weatherTemp ? (
+                      <>
+                        <p className="text-white text-3xl font-bold tabular-nums leading-none">
+                          {weatherTemp}
+                        </p>
+                        <p className="text-white/70 text-sm mt-1.5 leading-snug line-clamp-2">
+                          {weatherSection.summary}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-white text-base font-semibold leading-snug line-clamp-3">
+                        {weatherSection.summary}
                       </p>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                    )}
+                  </div>
+                </div>
+              )}
 
-            {/* Source links & images */}
-            {sources && sources.length > 0 && (
-              <div className="mt-6 space-y-3">
-                <p className="text-white/30 text-[10px] font-semibold tracking-wider uppercase">Sources</p>
-                {sources.map((src, i) => (
-                  <a
-                    key={i}
-                    href={src.url || "#"}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-start gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors text-left group"
-                  >
-                    {src.image_url && (
-                      <img
-                        src={src.image_url}
-                        alt=""
-                        className="shrink-0 w-16 h-16 rounded-lg object-cover bg-white/10"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                      />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white/80 text-sm font-medium leading-snug line-clamp-2 group-hover:text-white transition-colors">
-                        {src.title}
-                      </p>
-                      {src.source_name && (
-                        <p className="text-white/40 text-xs mt-1">{src.source_name}</p>
-                      )}
-                    </div>
-                    {src.url && (
-                      <ExternalLink className="shrink-0 h-3.5 w-3.5 text-white/30 mt-0.5 group-hover:text-white/60 transition-colors" />
-                    )}
-                  </a>
-                ))}
-              </div>
-            )}
+              {/* Top headline cards. Each card uses the source's article
+                  image when available, otherwise renders text-only so we
+                  never show a broken-image placeholder. */}
+              {newsHeadlines.length > 0 && (
+                <div className="mb-3">
+                  <p className="text-white/50 text-[10px] font-semibold tracking-[0.18em] uppercase mb-3 px-1">
+                    Top stories
+                  </p>
+                  <div className="space-y-3">
+                    {newsHeadlines.map((src, i) => (
+                      <div
+                        key={i}
+                        className="bg-white/10 backdrop-blur-sm rounded-2xl overflow-hidden border border-white/5"
+                      >
+                        {src.image_url && (
+                          <img
+                            src={src.image_url}
+                            alt=""
+                            className="w-full h-36 object-cover bg-white/5"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                          />
+                        )}
+                        <div className="p-4">
+                          <p className="text-white text-base font-bold leading-snug line-clamp-3">
+                            {src.title}
+                          </p>
+                          {src.source_name && (
+                            <p className="text-white/50 text-xs mt-1.5 font-medium tracking-wide uppercase">
+                              {src.source_name}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Optional context cards — only render when the briefing
+                  actually has the section. Skip filler so the recap stays
+                  uncluttered when the user has no calendar/sports data. */}
+              {calendarSection && (
+                <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 mb-3 flex items-start gap-3 border border-white/5">
+                  <CalendarIcon className="h-6 w-6 text-white/85 shrink-0 mt-0.5" strokeWidth={1.5} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white/55 text-[10px] font-semibold tracking-[0.18em] uppercase mb-1">
+                      Today
+                    </p>
+                    <p className="text-white text-sm font-medium leading-snug line-clamp-3">
+                      {calendarSection.summary}
+                    </p>
+                  </div>
+                </div>
+              )}
+              {sportsSection && (
+                <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 mb-3 flex items-start gap-3 border border-white/5">
+                  <Trophy className="h-6 w-6 text-white/85 shrink-0 mt-0.5" strokeWidth={1.5} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white/55 text-[10px] font-semibold tracking-[0.18em] uppercase mb-1">
+                      Sports
+                    </p>
+                    <p className="text-white text-sm font-medium leading-snug line-clamp-3">
+                      {sportsSection.summary}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
           </motion.div>
-        </div>
-      </div>
+        ) : (
+          <motion.div
+            key="transcript-view"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.6, ease: "easeOut" }}
+            className="flex-1 overflow-y-auto pb-56"
+          >
+            {/* Section tabs */}
+            <div className="px-5 pt-2 pb-4">
+              <div className="flex gap-2 overflow-x-auto no-scrollbar justify-center">
+                {sections.map((s, i) => {
+                  const isCurrent = i === activeSectionIndex;
+                  const isPast = currentTime >= (sectionOffsets[i + 1] ?? totalDuration);
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => {
+                        setActiveSectionIndex(i);
+                        setManualSection(i);
+                      }}
+                      className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium transition-all ${
+                        isCurrent
+                          ? "bg-white/25 text-white"
+                          : isPast
+                            ? "bg-white/15 text-white/70"
+                            : "bg-white/10 text-white/40 hover:text-white/60"
+                      }`}
+                    >
+                      {s.title}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Main content area — centered, large readable typography. */}
+            <div className="max-w-lg mx-auto px-6">
+              <motion.div
+                key={activeSectionIndex}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+                className="text-center"
+              >
+                {/* Section title */}
+                <p className="text-white/50 text-xs font-semibold tracking-wider uppercase mb-4">
+                  {activeSection.title}
+                </p>
+
+                {/* Summary text — single chunk renders centered, multi-chunk
+                    is a centered stack with the active line large+bold and
+                    siblings dimmed. No bullets so the spoken text reads as
+                    a single premium block, not a transcript list. */}
+                {summaryChunks.length === 1 ? (
+                  <div
+                    ref={(el) => { chunkRefs.current[0] = el; }}
+                    className="scroll-mt-24"
+                  >
+                    <p
+                      className={`text-[22px] leading-[1.45] tracking-[-0.01em] mb-6 transition-all duration-500 ${
+                        spokenUpTo >= 1
+                          ? "text-white font-bold"
+                          : "text-white/40 font-light"
+                      }`}
+                    >
+                      {summaryChunks[0]}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-5 mb-6">
+                    {summaryChunks.map((chunk, i) => {
+                      const isSpoken = i < spokenUpTo;
+                      const isSpeaking = i === spokenUpTo;
+                      return (
+                        <div
+                          key={i}
+                          ref={(el) => { chunkRefs.current[i] = el; }}
+                          className="scroll-mt-24"
+                        >
+                          <p
+                            className={`text-center transition-all duration-500 ${
+                              isSpeaking
+                                ? "text-white text-[22px] font-bold leading-[1.35] tracking-[-0.01em]"
+                                : isSpoken
+                                  ? "text-white/65 text-base font-medium leading-snug"
+                                  : "text-white/30 text-base font-light leading-snug"
+                            }`}
+                          >
+                            {chunk}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Card items — same centered spoken/upcoming treatment.
+                    Card items pick up where summary chunks left off in the
+                    chunkRefs index, so the auto-scroll keeps tracking. */}
+                {cardItems && cardItems.length > 0 && (
+                  <div className="space-y-4 mt-2">
+                    {cardItems.map((item, i) => {
+                      const globalIndex = summaryChunks.length + i;
+                      const isSpoken = globalIndex < spokenUpTo;
+                      const isSpeaking = globalIndex === spokenUpTo;
+                      return (
+                        <div
+                          key={i}
+                          ref={(el) => { chunkRefs.current[globalIndex] = el; }}
+                          className="scroll-mt-24"
+                        >
+                          <p
+                            className={`text-center transition-all duration-500 ${
+                              isSpeaking
+                                ? "text-white text-lg font-bold leading-snug"
+                                : isSpoken
+                                  ? "text-white/65 text-[15px] font-medium leading-snug"
+                                  : "text-white/25 text-[15px] font-light leading-snug"
+                            }`}
+                          >
+                            {item}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Source links & images */}
+                {sources && sources.length > 0 && (
+                  <div className="mt-6 space-y-3">
+                    <p className="text-white/30 text-[10px] font-semibold tracking-wider uppercase">Sources</p>
+                    {sources.map((src, i) => (
+                      <a
+                        key={i}
+                        href={src.url || "#"}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-start gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors text-left group"
+                      >
+                        {src.image_url && (
+                          <img
+                            src={src.image_url}
+                            alt=""
+                            className="shrink-0 w-16 h-16 rounded-lg object-cover bg-white/10"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                          />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white/80 text-sm font-medium leading-snug line-clamp-2 group-hover:text-white transition-colors">
+                            {src.title}
+                          </p>
+                          {src.source_name && (
+                            <p className="text-white/40 text-xs mt-1">{src.source_name}</p>
+                          )}
+                        </div>
+                        {src.url && (
+                          <ExternalLink className="shrink-0 h-3.5 w-3.5 text-white/30 mt-0.5 group-hover:text-white/60 transition-colors" />
+                        )}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </motion.div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Chapters overlay */}
       <AnimatePresence>
@@ -810,39 +1196,57 @@ export default function Player() {
                 const isCurrent = i === activeSectionIndex;
                 const startTime = sectionOffsets[i] ?? 0;
                 return (
-                  <button
+                  <div
                     key={s.id}
-                    onClick={() => {
-                      jumpToSection(i);
-                      setShowChapters(false);
-                    }}
-                    className={`w-full text-left flex items-center gap-3 py-3 px-3 rounded-xl transition-colors ${
+                    className={`w-full flex items-center gap-2 py-1 px-1 rounded-xl transition-colors ${
                       isCurrent ? "bg-white/15" : "hover:bg-white/5"
                     }`}
                   >
-                    <span
-                      className={`shrink-0 h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                        isCurrent
-                          ? "bg-white text-neutral-900"
-                          : "bg-white/10 text-white/60"
-                      }`}
+                    <button
+                      onClick={() => {
+                        jumpToSection(i);
+                        setShowChapters(false);
+                      }}
+                      className="flex-1 text-left flex items-center gap-3 py-2 px-2 rounded-lg"
                     >
-                      {i + 1}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className={`text-sm font-semibold truncate ${isCurrent ? "text-white" : "text-white/80"}`}>
-                        {s.title}
-                      </p>
-                      <p className="text-white/40 text-xs truncate">
-                        {formatTime(startTime)} · {s.duration_minutes} min
-                      </p>
-                    </div>
-                    {isCurrent && (
-                      <span className="ml-auto shrink-0 text-xs font-medium text-white/60 bg-white/10 px-2 py-0.5 rounded-full">
-                        Playing
+                      <span
+                        className={`shrink-0 h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold ${
+                          isCurrent ? "bg-white text-neutral-900" : "bg-white/10 text-white/60"
+                        }`}
+                      >
+                        {i + 1}
                       </span>
-                    )}
-                  </button>
+                      <div className="min-w-0 flex-1">
+                        <p className={`text-sm font-semibold truncate ${isCurrent ? "text-white" : "text-white/80"}`}>
+                          {s.title}
+                        </p>
+                        <p className="text-white/40 text-xs truncate">
+                          {formatTime(startTime)} · {s.duration_minutes} min
+                        </p>
+                      </div>
+                      {isCurrent && (
+                        <span className="shrink-0 text-xs font-medium text-white/60 bg-white/10 px-2 py-0.5 rounded-full">
+                          Playing
+                        </span>
+                      )}
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void handleShareSection(i);
+                      }}
+                      disabled={sharing}
+                      className="shrink-0 h-8 w-8 rounded-full flex items-center justify-center hover:bg-white/15 transition-colors disabled:opacity-40"
+                      aria-label={`Share section ${s.title}`}
+                      title="Share this section"
+                    >
+                      {sharing ? (
+                        <Loader2 className="h-3.5 w-3.5 text-white/70 animate-spin" />
+                      ) : (
+                        <Share2 className="h-3.5 w-3.5 text-white/70" strokeWidth={1.75} />
+                      )}
+                    </button>
+                  </div>
                 );
               })}
             </div>

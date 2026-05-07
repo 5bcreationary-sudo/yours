@@ -13,7 +13,7 @@ export function LandingFooter() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <YoursLogo size={36} />
-          <span className="text-sm text-muted-foreground">© 2026 Yours</span>
+          <span className="text-sm text-muted-foreground">© 2026</span>
         </div>
         <div className="flex items-center gap-6">
           <a href="/privacy" className="text-xs text-muted-foreground hover:text-primary-app transition-colors">Privacy</a>

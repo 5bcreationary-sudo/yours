@@ -7,7 +7,7 @@
 //   TTS_PROVIDER=fish               -> needs FISH_AUDIO_API_KEY
 //
 // Voice mapping:
-//   GOOGLE_TTS_VOICE_A / GOOGLE_TTS_VOICE_B  (default Chirp3-HD-Achernar / Chirp3-HD-Leda)
+//   GOOGLE_TTS_VOICE_A / GOOGLE_TTS_VOICE_B  (default Chirp3-HD-Charon / Chirp3-HD-Achernar)
 //   FISH_AUDIO_VOICE_ID_A / FISH_AUDIO_VOICE_ID_B
 
 import { getServiceClient } from "./supabase.ts";
@@ -19,6 +19,7 @@ import {
   generateIntroPcm,
   generateOutroPcm,
   generateSectionTransitionPcm,
+  generateStoryTransitionPcm,
   packWav,
   pcmDurationSeconds,
   SECTION_TRANSITION_ROOTS,
@@ -54,8 +55,8 @@ export interface TtsSection {
 function voiceForSpeaker(provider: TtsProvider, speaker: "A" | "B"): string | undefined {
   if (provider === "google") {
     return speaker === "A"
-      ? (Deno.env.get("GOOGLE_TTS_VOICE_A") ?? "en-US-Journey-D")
-      : (Deno.env.get("GOOGLE_TTS_VOICE_B") ?? "en-US-Chirp3-HD-Leda");
+      ? (Deno.env.get("GOOGLE_TTS_VOICE_A") ?? "en-US-Chirp3-HD-Charon")
+      : (Deno.env.get("GOOGLE_TTS_VOICE_B") ?? "en-US-Chirp3-HD-Achernar");
   }
   // Fish Audio
   return speaker === "A"
@@ -96,12 +97,26 @@ async function synthesizeAll(
   return results;
 }
 
-// --- Main pipeline -----------------------------------------------------
-export async function generateAndStoreBriefingAudio(params: {
-  userId: string;
-  briefingId: string;
+// --- Pure assembly (no storage / DB writes) ---------------------------
+// Synthesizes the dialogue, splices intro music + section/story transitions
+// + outro, and returns the merged audio bytes. Used by the prod pipeline
+// (generateAndStoreBriefingAudio) and by the demo synthesis function. Does
+// NOT touch storage or the database — caller is responsible for that.
+export interface AssembledBriefingAudio {
+  bytes: Uint8Array;
+  ext: "wav" | "mp3";
+  contentType: "audio/wav" | "audio/mpeg";
+  durationSeconds: number;
+  /** Per-section start times in seconds. Only meaningful for the Google
+   *  (raw PCM) path; null when provider=fish since MP3 byte concat doesn't
+   *  preserve sample-accurate offsets. */
+  sectionOffsets: number[] | null;
+  provider: TtsProvider;
+}
+
+export async function assembleBriefingAudio(params: {
   dialogue: DialogueTurn[];
-}): Promise<boolean> {
+}): Promise<AssembledBriefingAudio> {
   const provider = currentTtsProvider();
   logInfo("tts.provider", { provider, turns: params.dialogue.length });
 
@@ -113,21 +128,31 @@ export async function generateAndStoreBriefingAudio(params: {
     throw new Error("TTS_PROVIDER=fish but FISH_AUDIO_API_KEY not set");
   }
 
-  const supa = getServiceClient();
   const ordered = [...params.dialogue].sort((a, b) => a.order - b.order);
 
-  // Walk the dialogue and split it into a "flow" — a parallel list that records
-  // whether each step is a speech turn (synthesized to PCM) or a section break
-  // (replaced with an ambient stinger between sections). The order matters for
-  // assembly later; we keep speech turns in their own sequential array so the
-  // batch synthesizer doesn't see the marker turns.
+  // Walk the dialogue and split it into a "flow" — a parallel list of three
+  // step kinds:
+  //   - "speech"      : a real spoken turn (synthesized via TTS)
+  //   - "section"     : [section_break] marker — full ambient stinger between
+  //                     major segments (weather → personal → news → wrap)
+  //   - "story"       : [story_break] marker — lighter whoosh between
+  //                     individual stories within the news roundup
+  // Markers are filtered out of speechTurns so the batch synthesizer never
+  // sees them.
   const SECTION_BREAK_TEXT = "[section_break]";
-  type Flow = { kind: "speech"; speechIdx: number } | { kind: "break" };
+  const STORY_BREAK_TEXT = "[story_break]";
+  type Flow =
+    | { kind: "speech"; speechIdx: number }
+    | { kind: "section" }
+    | { kind: "story" };
   const flow: Flow[] = [];
   const speechTurns: DialogueTurn[] = [];
   for (const turn of ordered) {
-    if (turn.text.trim() === SECTION_BREAK_TEXT) {
-      flow.push({ kind: "break" });
+    const t = turn.text.trim();
+    if (t === SECTION_BREAK_TEXT) {
+      flow.push({ kind: "section" });
+    } else if (t === STORY_BREAK_TEXT) {
+      flow.push({ kind: "story" });
     } else {
       flow.push({ kind: "speech", speechIdx: speechTurns.length });
       speechTurns.push(turn);
@@ -182,14 +207,18 @@ export async function generateAndStoreBriefingAudio(params: {
   // Section 0 starts immediately after the intro/gap — record its start.
   recordSectionStart();
 
-  // Walk the flow and assemble. On a [section_break] step we push a short
-  // ambient stinger flanked by silence; on a speech step we push the
-  // synthesized PCM (Google) or MP3 bytes (Fish).
+  // Walk the flow and assemble.
+  //   - "section" step → full ambient stinger (1.8s) + flanking silence,
+  //     records a new section_offset.
+  //   - "story" step → much lighter whoosh (0.55s) with minimal silence,
+  //     does NOT record a section_offset (it's intra-section sound design).
+  //   - "speech" step → synthesized PCM (Google) or MP3 bytes (Fish).
   let nextTransitionIndex = 0;
+  let storyTransitionsTotal = 0;
   for (const step of flow) {
-    if (step.kind === "break") {
-      // Subtle ambient stinger between sections — different root note each
-      // time so consecutive transitions don't sound identical.
+    if (step.kind === "section") {
+      // Subtle ambient stinger between major sections — different root note
+      // each time so consecutive transitions don't sound identical.
       const rootHz = SECTION_TRANSITION_ROOTS[nextTransitionIndex % SECTION_TRANSITION_ROOTS.length];
       nextTransitionIndex++;
       pushChunk(silencePcm(0.25));
@@ -197,6 +226,15 @@ export async function generateAndStoreBriefingAudio(params: {
       pushChunk(silencePcm(0.35));
       // After the stinger + flanking silence, the next section's speech starts.
       recordSectionStart();
+      continue;
+    }
+    if (step.kind === "story") {
+      // Much lighter whoosh between stories within the news roundup. No
+      // section_offset recorded — these are intra-section transitions.
+      pushChunk(silencePcm(0.12));
+      pushChunk(generateStoryTransitionPcm());
+      pushChunk(silencePcm(0.18));
+      storyTransitionsTotal++;
       continue;
     }
     const result = synthResults[step.speechIdx];
@@ -239,18 +277,8 @@ export async function generateAndStoreBriefingAudio(params: {
         return buf;
       })();
 
-  // Upload to storage. WAV files use .wav extension and audio/wav mime type.
-  const ext = provider === "google" ? "wav" : "mp3";
-  const contentType = provider === "google" ? "audio/wav" : "audio/mpeg";
-  const path = `${params.userId}/${params.briefingId}.${ext}`;
-  const up = await supa.storage.from("briefing-audio").upload(path, merged, {
-    contentType,
-    upsert: true,
-  });
-  if (up.error) {
-    logError("tts.storage_upload_error", { err: up.error.message });
-    throw new Error(`storage upload: ${up.error.message}`);
-  }
+  const ext: "wav" | "mp3" = provider === "google" ? "wav" : "mp3";
+  const contentType: "audio/wav" | "audio/mpeg" = provider === "google" ? "audio/wav" : "audio/mpeg";
 
   // Accurate duration for WAV: total PCM bytes / (sample_rate * bytes_per_sample).
   // Fallback for Fish MP3: estimate from word count.
@@ -269,16 +297,7 @@ export async function generateAndStoreBriefingAudio(params: {
   // the player falls back to scaling section.duration_minutes.
   const sectionOffsetsForRow = provider === "google" ? sectionOffsetsSec : null;
 
-  await supa
-    .from("briefings")
-    .update({
-      audio_url: path,
-      audio_duration_seconds: durationSeconds,
-      section_offsets: sectionOffsetsForRow,
-    })
-    .eq("id", params.briefingId);
-
-  logInfo("tts.complete", {
+  logInfo("tts.assembled", {
     provider,
     turns: ordered.length,
     speechTurns: preparedTurns.length,
@@ -287,9 +306,58 @@ export async function generateAndStoreBriefingAudio(params: {
     durationSeconds,
     introBytes,
     outroBytes,
-    transitions: nextTransitionIndex,
+    sectionTransitions: nextTransitionIndex,
+    storyTransitions: storyTransitionsTotal,
     sectionStarts: sectionOffsetsSec.length,
     ext,
+  });
+
+  return {
+    bytes: merged,
+    ext,
+    contentType,
+    durationSeconds,
+    sectionOffsets: sectionOffsetsForRow,
+    provider,
+  };
+}
+
+// --- Main pipeline -----------------------------------------------------
+// Wrapper around assembleBriefingAudio that uploads the bytes to Supabase
+// storage and updates the briefings row. This is the entry point used by
+// the production generate-morning-briefing flow.
+export async function generateAndStoreBriefingAudio(params: {
+  userId: string;
+  briefingId: string;
+  dialogue: DialogueTurn[];
+}): Promise<boolean> {
+  const assembled = await assembleBriefingAudio({ dialogue: params.dialogue });
+  const supa = getServiceClient();
+
+  const path = `${params.userId}/${params.briefingId}.${assembled.ext}`;
+  const up = await supa.storage.from("briefing-audio").upload(path, assembled.bytes, {
+    contentType: assembled.contentType,
+    upsert: true,
+  });
+  if (up.error) {
+    logError("tts.storage_upload_error", { err: up.error.message });
+    throw new Error(`storage upload: ${up.error.message}`);
+  }
+
+  await supa
+    .from("briefings")
+    .update({
+      audio_url: path,
+      audio_duration_seconds: assembled.durationSeconds,
+      section_offsets: assembled.sectionOffsets,
+    })
+    .eq("id", params.briefingId);
+
+  logInfo("tts.complete", {
+    provider: assembled.provider,
+    bytes: assembled.bytes.byteLength,
+    durationSeconds: assembled.durationSeconds,
+    ext: assembled.ext,
   });
 
   return true;
