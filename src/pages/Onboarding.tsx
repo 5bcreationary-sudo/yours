@@ -25,7 +25,6 @@ import { toast } from "sonner";
 import { addRssSource, getInterests, triggerBriefing, upsertInterests } from "@/lib/supabase";
 import { useWeatherPreview } from "@/hooks/useWeatherPreview";
 import { ReactiveLine } from "@/components/onboarding/ReactiveLine";
-import { GenerationFlow } from "@/components/onboarding/GenerationFlow";
 
 function normalizePhone(raw: string): string | null {
   const trimmed = raw.trim();
@@ -183,7 +182,6 @@ export default function Onboarding() {
     delivery_time: "07:00",
   });
   const [geoLoading, setGeoLoading] = useState(false);
-  const [generating, setGenerating] = useState<string | null>(null); // briefing id once triggered
 
   const update = (key: keyof typeof formData, value: unknown) =>
     setFormData((prev) => ({ ...prev, [key]: value }));
@@ -397,21 +395,16 @@ export default function Onboarding() {
       if (step < STEPS.length - 1) {
         setStep(step + 1);
       } else {
-        // Final step: trigger first briefing and switch into the generation flow.
+        // Final step: trigger first briefing and go straight to the player.
         try {
-          const location =
+          const loc =
             formData.location_lat != null && formData.location_lng != null
-              ? {
-                  lat: formData.location_lat,
-                  lng: formData.location_lng,
-                  city: formData.location_city || "",
-                }
+              ? { lat: formData.location_lat, lng: formData.location_lng, city: formData.location_city || "" }
               : undefined;
-          const { briefing_id } = await triggerBriefing(location ? { location } : undefined);
-          setGenerating(briefing_id);
+          const { briefing_id } = await triggerBriefing(loc ? { location: loc } : undefined);
+          navigate(`/b/${briefing_id}`, { state: { autoplay: true } });
         } catch (err) {
           console.error("[onboarding] triggerBriefing failed", err);
-          // Even if trigger fails, the user is fully onboarded — drop them on /app.
           toast.success("You're all set!");
           navigate("/app");
         }
@@ -431,29 +424,6 @@ export default function Onboarding() {
   };
 
   const progress = ((step + 1) / STEPS.length) * 100;
-
-  // While generating, render the full-screen GenerationFlow.
-  if (generating) {
-    return (
-      <GenerationFlow
-        briefingId={generating}
-        location={
-          formData.location_lat != null && formData.location_lng != null
-            ? { lat: formData.location_lat, lng: formData.location_lng, city: formData.location_city }
-            : null
-        }
-        tags={[
-          ...COVERAGE_OPTIONS.filter((o) => formData.coverage.includes(o.id)).map(
-            (o) => (formData.coverage_details[o.id] || o.label),
-          ),
-          ...extractChips(formData.freeform_interests),
-        ]}
-        onReady={(briefingId) => {
-          navigate(`/b/${briefingId}`, { state: { autoplay: true } });
-        }}
-      />
-    );
-  }
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
