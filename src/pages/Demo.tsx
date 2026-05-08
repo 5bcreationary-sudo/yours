@@ -24,32 +24,32 @@ const DEMO_SECTIONS: DemoSection[] = [
     type: "weather",
     title: "Weather",
     summary:
-      "High of 78°, low of 59°, with afternoon showers possible after 3 PM. If you're heading out for lunch, grab a layer — the temperature drop comes fast once the clouds roll in.",
-    duration_seconds: 22,
+      "High of sixty-eight today with increasing clouds moving in by afternoon. There's a forty percent chance of showers around four or five o'clock, so if you're heading out for lunch, grab a light jacket. Saturday looks nice, then we're back to rain on Sunday.",
+    duration_seconds: 18,
   },
   {
     id: "calendar",
     type: "calendar",
-    title: "Day ahead",
+    title: "Your schedule",
     summary:
-      "Three meetings back-to-back from 1 to 4 PM — product review with Sarah at 2, budget sync at 3. Dinner with Mike at 7. Worth flagging: Sarah's deck for Friday's exec sync needs your sign-off by end of day.",
-    duration_seconds: 24,
+      "Product standup at ten, marketing sync at eleven-thirty. After that, your calendar opens up until four with the exec briefing. That's your window if you need to catch up on emails or anything from yesterday's board prep.",
+    duration_seconds: 18,
   },
   {
     id: "news",
     type: "news",
     title: "Headlines",
     summary:
-      "The Fed held rates steady at 4.5% — Powell says inflation is coming down, but not fast enough to justify a cut yet. Markets opened slightly lower on the news. Also: the EU formally passed its AI Safety Act, mandating third-party audits for capable AI models. The U.S. is already drafting its version.",
-    duration_seconds: 40,
+      "The European Union just formalized its AI Safety Act — any AI system above a set capability threshold now needs third-party audits. The U.S. is already drafting its version. Markets opened down point-three percent after the Fed held rates steady again. Most analysts expect they'll start cutting by summer.",
+    duration_seconds: 30,
   },
   {
     id: "wrap",
     type: "interests",
     title: "Wrap-up",
     summary:
-      "That's your morning. This has been Yours.",
-    duration_seconds: 10,
+      "That's your morning. Get some good work done. This has been Yours.",
+    duration_seconds: 8,
   },
 ];
 
