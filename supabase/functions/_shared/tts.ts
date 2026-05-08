@@ -54,9 +54,12 @@ export interface TtsSection {
 // --- Per-turn synthesis ------------------------------------------------
 function voiceForSpeaker(provider: TtsProvider, speaker: "A" | "B"): string | undefined {
   if (provider === "google") {
+    // HOST A (interviewer): Puck — energetic, upbeat, lighter male delivery
+    // HOST B (reporter):    Kore — clear, warm, measured female delivery
+    // Override via GOOGLE_TTS_VOICE_A / GOOGLE_TTS_VOICE_B env vars in Supabase dashboard.
     return speaker === "A"
-      ? (Deno.env.get("GOOGLE_TTS_VOICE_A") ?? "en-US-Chirp3-HD-Charon")
-      : (Deno.env.get("GOOGLE_TTS_VOICE_B") ?? "en-US-Chirp3-HD-Achernar");
+      ? (Deno.env.get("GOOGLE_TTS_VOICE_A") ?? "en-US-Chirp3-HD-Puck")
+      : (Deno.env.get("GOOGLE_TTS_VOICE_B") ?? "en-US-Chirp3-HD-Kore");
   }
   // Fish Audio
   return speaker === "A"

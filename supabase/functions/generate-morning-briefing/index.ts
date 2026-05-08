@@ -265,6 +265,7 @@ Deno.serve(async (req) => {
         calendar: hasCal,
         rss: rssFeeds.length > 0,
         weather: !!weather,
+        no_rss_data: rss.length === 0,
       },
       data: {
         weather,
@@ -279,15 +280,20 @@ Deno.serve(async (req) => {
       user:
         `Generate today's briefing for this user.\n\n` +
         `LISTENER FIRST NAME: ${firstName || "(empty)"}\n\n` +
-        // Compact structure brief — the system prompt has the full rules,
-        // this is the front-of-attention reminder.
-        `STRUCTURE (in order, with [section_break] markers between segments):\n` +
-        `1. HOOK (turn 0) — three punchy fragments + "This is Yours." (e.g. "[serious]A breakthrough in AI regulation, tensions in the Middle East, and a busy afternoon. This is Yours.[/serious]"). NO greeting, NO date — server adds those after your hook.\n` +
-        `2. WEATHER (and a one-sentence commute angle ONLY if weather is bad)\n` +
+        `STRUCTURE (in order — follow OPENING INTRO rules in the system prompt exactly):\n` +
+        `1. INTRO (turns 0–2)\n` +
+        `   - Turn 0 (A, verbatim): "Good morning, ${firstName || "everyone"}. Here's what's happening today."\n` +
+        `   - Turns 1–2: 2–3 sentence teaser of the top 2–3 stories + smooth transition sentence.\n` +
+        `   - Do NOT write "Welcome to Yours." — the server appends "It's ${weekday}, ${monthDay}. Welcome to Yours." after your turn 2.\n` +
+        `   - Do NOT insert [section_break] between the intro and first content section.\n` +
+        `2. WEATHER (one-sentence commute angle ONLY if conditions are bad)\n` +
         `3. PERSONAL — email priorities + calendar look-ahead (the differentiator; spend real time here)\n` +
-        `4. NEWS ROUNDUP — 4–6 stories, each in the facts → context → why-it-matters arc, ~150 words/story\n` +
-        `5. FEEL-GOOD WRAP — one real positive item (skip if nothing positive in the data)\n` +
+        `4. NEWS ROUNDUP — 4–6 stories, each in the facts → context → why-it-matters arc.\n` +
+        `   IMPORTANT: If rss_items is empty or has fewer than 2 items, generate a NEWS ROUNDUP\n` +
+        `   from your general knowledge of current events this week. Do NOT skip news.\n` +
+        `5. FEEL-GOOD WRAP — one real positive item (skip only if truly nothing positive in the data)\n` +
         `6. SIGN-OFF — final turn includes "This has been Yours."\n\n` +
+        `BANNED PHRASES (failure if used): "wow that's huge", "wow that's amazing", "that's incredible", "tell me more", "how cool is that", "that's wild", "no way", "I love that"\n\n` +
         `DATA:\n` +
         JSON.stringify(userPayload, null, 2),
       tool: SCRIPT_TOOL,
@@ -314,62 +320,50 @@ Deno.serve(async (req) => {
       );
     }
 
-    // ============== HOOK + GREETING WIRING ==============
-    // The new podcast structure is: HOOK (LLM, ends with "This is Yours.")
-    // → music sting → server-built greeting (with verified date) → rest.
-    //
-    // We keep whatever the model wrote as turn 0 (the hook), strip any
-    // greeting/date sentences the model leaked elsewhere (LLMs hallucinate
-    // weekdays/dates from training data), then inject a [section_break]
-    // and a server-built greeting turn after the hook.
+    // ============== INTRO WIRING ==============
+    // Structure: LLM writes turns 0–2 per INTRO_RULE (greeting + teaser + transition).
+    // Server then:
+    //   1. Strips date sentences only from turns index 3+ (prevents body hallucinations;
+    //      preserves any date the LLM correctly placed in the intro).
+    //   2. Normalizes turn 0 to the exact greeting text (server-authoritative).
+    //   3. Injects "It’s {weekday}, {monthDay}. Welcome to Yours." + [section_break]
+    //      after the intro (after position 2), so the audio always plays:
+    //        "Good morning, {name}. Here’s what’s happening today."
+    //        [teaser sentences]
+    //        "It’s Day, Month. Welcome to Yours."
+    //        [music sting]
+    //        [first content section]
 
-    // 1. Strip any "It's <Day>, <Month> <day>" sentences anywhere in any
-    //    dialogue text — the model often duplicates the date even after
-    //    being told not to. Removing the sentence (not the whole turn) lets
-    //    the rest of that turn's content survive.
+    // 1. Strip date sentences from body turns only (index >= 3).
     const DATE_SENTENCE_RE =
-      /\bIt(?:'|’|')?s\s+(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}(?:st|nd|rd|th)?\.?/gi;
-    dialogue = dialogue.map((d) => ({
-      ...d,
-      text: d.text.replace(DATE_SENTENCE_RE, "").replace(/\s{2,}/g, " ").trim(),
-    })).filter((d) => d.text.length > 0);
-
-    // 2. Drop any leading turn that's a greeting (no hook, just a "Good
-    //    morning" — the model ignored the hook rule). This is the fallback
-    //    for when the model doesn't write a proper hook.
-    const GREETING_ONLY_RE = /\b(?:good\s+morning|good\s+afternoon|good\s+evening|welcome\s+to\s+yours)\b/i;
-    while (
-      dialogue.length > 0 &&
-      dialogue[0].text.trim() !== "[section_break]" &&
-      GREETING_ONLY_RE.test(dialogue[0].text) &&
-      // Don't strip the hook itself — the hook ends with "This is Yours."
-      !/this\s+is\s+yours\.?\s*\[?\/?serious\]?$/i.test(dialogue[0].text.trim())
-    ) {
-      dialogue.shift();
-    }
-
-    // 3. If the LLM didn't write a real hook, inject a fallback hook so the
-    //    structure is preserved. A fallback uses generic sources from the
-    //    payload — the LLM hook is much better when it lands.
-    const firstTurnText = dialogue[0]?.text?.trim() ?? "";
-    const hookLooksReal = /this\s+is\s+yours\.?/i.test(firstTurnText);
-    if (!hookLooksReal) {
-      const fallbackHook = {
-        speaker: "A" as const,
-        text: `[serious]A look at today's top stories, what's happening on your calendar, and the weather where you are. This is Yours.[/serious]`,
+      /\bIt(?:’|’|’)?s\s+(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),?\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}(?:st|nd|rd|th)?\.?/gi;
+    dialogue = dialogue.map((d, i) => {
+      if (i < 3) return d; // preserve intro turns 0–2 as written
+      return {
+        ...d,
+        text: d.text.replace(DATE_SENTENCE_RE, "").replace(/\s{2,}/g, " ").trim(),
       };
-      dialogue.unshift(fallbackHook);
+    }).filter((d) => d.text.length > 0);
+
+    // 2. Normalize turn 0 to the exact greeting (server-authoritative, matches
+    //    the visual recap card text on the player).
+    const exactGreeting = firstName
+      ? `Good morning, ${firstName}. Here’s what’s happening today.`
+      : "Good morning. Here’s what’s happening today.";
+    if (dialogue[0]) {
+      dialogue[0] = { speaker: "A" as const, text: exactGreeting };
+    } else {
+      dialogue.unshift({ speaker: "A" as const, text: exactGreeting });
     }
 
-    // 4. Insert music sting + server-built greeting AFTER turn 0 (the hook).
-    const introGreeting = firstName ? `Good morning, ${firstName}.` : "Good morning, everyone.";
-    const greetingTurn = {
-      speaker: "A" as const,
-      text: `[warm]${introGreeting}[/warm] [pause:short] It's ${weekday}, ${monthDay}. Let's get into it.`,
-    };
-    dialogue.splice(1, 0,
+    // 3. Inject date/welcome + section_break AFTER the intro (after position 2).
+    //    Server owns the date string so it’s always accurate.
+    dialogue.splice(3, 0,
+      {
+        speaker: "A" as const,
+        text: `[warm]It’s ${weekday}, ${monthDay}. Welcome to Yours.[/warm]`,
+      },
       { speaker: "A" as const, text: "[section_break]" },
-      greetingTurn,
     );
 
     // Diagnostics on what the model produced — surfaces in pipeline logs so

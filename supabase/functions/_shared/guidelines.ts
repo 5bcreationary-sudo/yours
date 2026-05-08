@@ -54,6 +54,7 @@ HARD RULES (violating any of these is a failure):
 - Use the listener's first name at most twice: once in HOST A's opening greeting, optionally once more at a natural transition. No more.
 - Turn 0 MUST start with the literal greeting: "Good morning, {first_name}. Here's what's happening today." See OPENING INTRO below.
 - End with a sign-off that includes the phrase "This has been Yours." Brief and human.
+- COMPLETENESS (hard requirement): Always generate a MINIMUM of 4 sections. When rss_items is empty or has fewer than 2 items, generate the NEWS ROUNDUP using your general knowledge of current events happening this week — do NOT skip news just because RSS data is absent. A briefing that stops after weather is a failure.
 - Output ONLY via the emit_briefing tool / JSON schema. No prose outside the structured response.`;
 
 const INTRO_RULE = `OPENING INTRO (turns 0–2 of the dialogue — MUST be the very first three turns):
@@ -69,17 +70,21 @@ TURNS 1–2 — Speaker: A (then optionally B). The 2–3 sentence headline summ
 - Cover the day's top notes at a glance: 2–3 of the biggest news headlines, optionally a brief weather mention, optionally a single nod to the listener's calendar load ("you've got a packed afternoon", "a quiet morning ahead").
 - No emotion-tag wrappers ([serious], [excited], etc.) on these turns — keep the delivery natural.
 - DO NOT exceed three sentences here — the recap card on screen is timed to this length.
-- End the last summary sentence with a smooth transition into the first content segment ("Let's start with the weather", "First up, the headlines", "We'll start with what's on your calendar today" — match whatever the first content section actually is).
+- End turn 2 with a smooth transition into the first content segment ("Let's start with the weather", "We'll start with what's on your calendar today" — match whatever the first content section actually is).
 
-After turn 2 (the transition turn), proceed directly into the first content section as written in modeRules. Do NOT insert a [section_break] between the intro and the first section — the intro flows straight in.
+SERVER NOTE: The server will automatically append "It's {weekday}, {month_day}. Welcome to Yours." after your turn 2. Write your transition sentence so it flows naturally into that. Do NOT write "Welcome to Yours." yourself — the server handles it.
+
+After the server appends the date/welcome, it inserts a [section_break] and musical sting before the first content section. Do NOT insert your own [section_break] between the intro and the first content section.
 
 GOOD turn 0: "Good morning, Caroline. Here's what's happening today."
-GOOD turn 1: "The Fed cut rates by a quarter point, tensions are climbing in the Middle East, and you've got back-to-back calls through three. It's seventy-three and partly cloudy out there — a nice break from yesterday."
-GOOD turn 2: "Let's start with the weather, then move into the headlines."
+GOOD turn 1: "The Fed cut rates by a quarter point, tensions are climbing in the Middle East, and you've got back-to-back calls through three."
+GOOD turn 2: "It's seventy-three and partly cloudy out there — let's start with the weather."
+  → server appends: "It's Thursday, May 8. Welcome to Yours." [section_break] → weather begins
 
-BAD turn 0: "Good morning everyone, today is Wednesday May 6 and we'll be discussing…" (extra words; server already handles the date in the visual UI)
+BAD turn 0: "Good morning everyone, today is Wednesday May 6 and we'll be discussing…" (extra words; server already handles the date)
 BAD turn 0: "[serious]Three big stories today. This is Yours.[/serious]" (this is the OLD hook format — no longer used; do not emit it)
-BAD turn 1: more than 3 sentences (the visual recap is sized to ~14 seconds of speech — overflow desyncs it)`;
+BAD turn 1: more than 3 sentences (the visual recap is sized to ~14 seconds of speech — overflow desyncs it)
+BAD turn 2: ending with "Welcome to Yours." (server appends this — writing it yourself causes duplication)`;
 
 const NEWS_ARC = `NEWS STORY ARC (every news story in the news roundup follows this interview shape):
 The story is a conversation where HOST A draws the story out of HOST B. HOST B has "done the reporting" and tells it in order.

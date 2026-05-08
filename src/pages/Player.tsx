@@ -853,7 +853,7 @@ export default function Player() {
         {/* Text-only title — logo lives in the intro recap below where it can
             breathe at premium size. The personalized greeting also moves to
             the recap so the top bar stays clean. */}
-        <h1 className="text-white text-xl font-bold tracking-tight">Yours</h1>
+        <YoursLogo size={44} className="opacity-90" />
         <button
           onClick={handleShare}
           disabled={sharing}
@@ -886,7 +886,7 @@ export default function Player() {
                   the visual recap. Top bar stays text-only "Yours" so this
                   is the only logo on the page. */}
               <div className="flex justify-center mb-8 mt-2">
-                <YoursLogo size={96} className="text-white" />
+                <YoursLogo size={128} className="text-white" />
               </div>
 
               {/* Greeting + date. Mirrors the spoken intro the listener
