@@ -152,43 +152,44 @@ export function generateIntroPcm(): Uint8Array {
   return bytes;
 }
 
-/** Subtle "whoosh" between two consecutive news stories within the same
+/** Three quick "ding" tones between consecutive news stories within the same
  *  section. Much shorter and lighter than `generateSectionTransitionPcm`
  *  — this is sound design, not a music sting.
  *
- *  ~0.55s sweep using filtered noise + a brief low-freq airy tone. Triggered
- *  by the LLM emitting a [story_break] marker between stories. Falls under
- *  the same overall section, so section_offsets are not affected. */
+ *  ~0.5s total of 3 stacked bright bell tones for a clear, punchy story break.
+ *  Triggered by the LLM emitting a [story_break] marker between stories. */
 export function generateStoryTransitionPcm(): Uint8Array {
-  const totalSeconds = 0.55;
+  const totalSeconds = 0.5;
   const totalSamples = Math.floor(SAMPLE_RATE * totalSeconds);
   const pcm = new Int16Array(totalSamples);
 
-  // Pseudo-random "noise" via a simple LCG seeded with 0 — deterministic so
-  // every story break sounds the same (a recognizable cue).
-  let lcg = 1;
-  const rand = () => { lcg = (lcg * 1103515245 + 12345) & 0x7fffffff; return (lcg / 0x7fffffff) * 2 - 1; };
-
-  // Single-pole low-pass IIR for the noise (so it sounds like air, not buzz)
-  let lp = 0;
-  const lpAlpha = 0.05;
+  // Three bell tones: bright frequencies that decay quickly
+  const tones = [
+    { hz: 800, decay: 8.0 },   // high ding
+    { hz: 600, decay: 7.0 },   // mid ding
+    { hz: 1000, decay: 9.0 },  // very high ding
+  ];
 
   for (let i = 0; i < totalSamples; i++) {
     const t = i / SAMPLE_RATE;
-    // Bell-shaped envelope that swells and falls
-    const env = Math.sin(Math.PI * (t / totalSeconds));
 
-    // Filtered noise bed
-    const noise = rand();
-    lp = lp + lpAlpha * (noise - lp);
+    // Master attack: quick attack over 20ms, then sustain/decay
+    const attack = 0.02;
+    let env = 1;
+    if (t < attack) env = t / attack;
 
-    // Slow airy tone underneath (sweeps from ~80Hz to ~140Hz then back)
-    const sweepHz = 80 + 60 * Math.sin(Math.PI * (t / totalSeconds));
-    const tone = Math.sin(2 * Math.PI * sweepHz * t);
+    // Mix three bell tones with exponential decay
+    let sample = 0;
+    for (const tone of tones) {
+      const decay = Math.exp(-t * tone.decay);
+      const phase = 2 * Math.PI * tone.hz * t;
+      sample += Math.sin(phase) * decay * 0.25;
+    }
 
-    const sample = (lp * 0.18 + tone * 0.06) * env;
-    const clipped = Math.max(-1, Math.min(1, sample));
-    pcm[i] = Math.round(clipped * 22000);
+    // Slight overall envelope falloff for smoothness
+    const masterEnv = Math.max(0, 1 - t / totalSeconds);
+    const clipped = Math.max(-1, Math.min(1, sample * env * masterEnv));
+    pcm[i] = Math.round(clipped * 28000);
   }
 
   const bytes = new Uint8Array(pcm.byteLength);

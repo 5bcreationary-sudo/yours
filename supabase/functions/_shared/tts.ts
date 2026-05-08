@@ -144,6 +144,13 @@ export async function assembleBriefingAudio(params: {
   // sees them.
   const SECTION_BREAK_TEXT = "[section_break]";
   const STORY_BREAK_TEXT = "[story_break]";
+
+  // Helper: normalize marker text (case-insensitive, handle underscores)
+  const normalizeMarker = (text: string) =>
+    text.toLowerCase().replace(/[-_]/g, "");
+  const sectionBreakNorm = normalizeMarker(SECTION_BREAK_TEXT);
+  const storyBreakNorm = normalizeMarker(STORY_BREAK_TEXT);
+
   type Flow =
     | { kind: "speech"; speechIdx: number }
     | { kind: "section" }
@@ -152,9 +159,10 @@ export async function assembleBriefingAudio(params: {
   const speechTurns: DialogueTurn[] = [];
   for (const turn of ordered) {
     const t = turn.text.trim();
-    if (t === SECTION_BREAK_TEXT) {
+    const tNorm = normalizeMarker(t);
+    if (tNorm === sectionBreakNorm) {
       flow.push({ kind: "section" });
-    } else if (t === STORY_BREAK_TEXT) {
+    } else if (tNorm === storyBreakNorm) {
       flow.push({ kind: "story" });
     } else {
       flow.push({ kind: "speech", speechIdx: speechTurns.length });
